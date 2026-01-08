@@ -1343,6 +1343,26 @@ APPLY_MULTI_IP() {
           echo "✅ All multi-IP domain statuses are already 'applied'"
       fi
 
+    # ============ 3.5. Add dedicated IPs to interface ============
+    if [[ -s "$TEMP_FILE" ]]; then
+        INTERFACE=$(ip route | grep default | awk '{print $5}')
+        echo "🔧 Adding dedicated IPs to interface $INTERFACE..."
+        while IFS='|' read -r domain smtp_name; do
+            domain=$(echo "$domain" | xargs)
+            smtp_name=$(echo "$smtp_name" | xargs)
+            [[ -z "$domain" || -z "$smtp_name" ]] && continue
+            IP=$(echo "$smtp_name" | sed 's/smtp_bind_ip_\([0-9.]*\)_.*$/\1/')
+            if [[ "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                if ! ip addr show dev $INTERFACE | grep -q $IP; then
+                    ip addr add $IP/32 dev $INTERFACE
+                    echo "✅ Added IP $IP to $INTERFACE"
+                else
+                    echo "ℹ️ IP $IP already on $INTERFACE"
+                fi
+            fi
+        done < "$TEMP_FILE"
+    fi
+
     # ============ 4. Restart services ============
     echo "🔄 Restarting BillionMail services"
     if ! ${DOCKER_COMPOSE} down; then
@@ -1388,6 +1408,8 @@ APPLY_MULTI_IP() {
     fi
 
     echo "========================================="
+
+    echo "⚠️💡❌ Remember: Run 'sudo nano /etc/netplan/50-cloud-init.yaml', add the IPs under addresses, and 'sudo netplan apply' for persistence."
 
     # Successfully completed, remove ERR trap
     trap - ERR
