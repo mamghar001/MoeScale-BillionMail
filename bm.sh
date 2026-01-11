@@ -891,6 +891,60 @@ MODIFY_SAFE_ENTRANCE() {
     fi
  }
 
+# Rebuild Frontend only
+REBUILD_FRONTEND() {
+    echo "Rebuilding BillionMail Frontend..."
+    echo -e "\033[33mThis will rebuild the frontend UI and restart the core container.\033[0m"
+    
+    # Check if frontend directory exists
+    if [ ! -d "./core/frontend" ]; then
+        echo -e "\033[31mError: Frontend directory not found at ./core/frontend\033[0m"
+        exit 1
+    fi
+    
+    echo "Step 1/4: Building frontend with Node.js (this may take a few minutes)..."
+    
+    # Use Docker to build the frontend (no need for Node.js installed on host)
+    docker run --rm \
+        -v "$(pwd)/core/frontend:/app" \
+        -w /app \
+        node:20-alpine \
+        sh -c "npm install -g pnpm && pnpm install && pnpm run build"
+    
+    if [ $? -eq 0 ]; then
+        echo -e "\033[32m✓ Frontend build completed successfully\033[0m"
+    else
+        echo -e "\033[31m✗ Frontend build failed\033[0m"
+        exit 1
+    fi
+    
+    echo "Step 2/4: Copying build files to public directory..."
+    if [ -d "./core/frontend/dist" ]; then
+        # Clean old build files first
+        rm -rf ./core/public/dist/*
+        # Copy new build
+        cp -r ./core/frontend/dist/* ./core/public/dist/
+        echo -e "\033[32m✓ Build files copied to core/public/dist/\033[0m"
+    else
+        echo -e "\033[31m✗ Build directory not found\033[0m"
+        exit 1
+    fi
+    
+    echo "Step 3/4: Restarting core container to load new frontend..."
+    SERVICE="core"
+    GET_SERVICE_NAME
+    if [ -n "${SERVICE_NAME}" ]; then
+        ${DOCKER_COMPOSE} restart ${SERVICE_NAME}
+        echo -e "\033[32m✓ Core container restarted\033[0m"
+    else
+        echo -e "\033[31m✗ Core service not found\033[0m"
+        exit 1
+    fi
+    
+    echo "Step 4/4: Clearing browser cache recommended..."
+    echo -e "\033[32m✓ Frontend rebuild completed! Please refresh your browser (Ctrl+Shift+R or Cmd+Shift+R)\033[0m"
+}
+
 # Restart the BillionMail project
 RESTART_PROJECT() {
     echo "Restarting BillionMail..."
@@ -1637,6 +1691,7 @@ SHOW_HELP() {
         echo "  status                    - Show BillionMail containers running status : $0 status"
         echo "  down                      - Stop and remove containers, networks: $0 down"
         echo "  rebuild                   - Rebuild all BillionMail containers: $0 rebuild"
+        echo "  rebuild-frontend          - Rebuild frontend UI only: $0 rebuild-frontend"
         echo "  top                       - Show all BillionMail processes: $0 top"
         echo "  ps                        - Show all BillionMail containers: $0 ps"
         echo "  service-top               - Show processes of a specific BillionMail service: $0 s-t postfix"
@@ -1713,6 +1768,9 @@ case "$1" in
         ;;
     REBUILD_PROJECT|rebuild_project|rebuild)
         REBUILD_PROJECT
+        ;;
+    REBUILD_FRONTEND|rebuild_frontend|rebuild-frontend)
+        REBUILD_FRONTEND
         ;;
     RESTART_PROJECT|restart_project|restart)
         RESTART_PROJECT
