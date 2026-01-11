@@ -1270,7 +1270,12 @@ APPLY_MULTI_IP() {
     else
         echo "📋 Found $(wc -l < "$TEMP_FILE") configuration records"
 
+        # Temporarily disable ERR trap for the loop to prevent early exit
+        trap - ERR
+
         # Safely process query results
+        INSERTED_COUNT=0
+        FAILED_COUNT=0
         while IFS='|' read -r domain smtp_name; do
             # Clean whitespace and validate
             domain=$(echo "$domain" | xargs)
@@ -1292,33 +1297,43 @@ APPLY_MULTI_IP() {
 
             # Use secure SQL query
             escaped_domain=$(printf '%s\n' "$domain_with_at" | sed "s/'/''/g")
-            EXISTS=$(docker exec -i -e PGPASSWORD=${DBPASS} ${PGSQL_CONTAINER_NAME} psql -U ${DBUSER} -d ${DBNAME} -t -A \
-                -c "SELECT 1 FROM bm_domain_smtp_transport WHERE domain = '$escaped_domain';")
+            EXISTS=$(docker exec -e PGPASSWORD=${DBPASS} ${PGSQL_CONTAINER_NAME} psql -U ${DBUSER} -d ${DBNAME} -t -A \
+                -c "SELECT 1 FROM bm_domain_smtp_transport WHERE domain = '$escaped_domain';" 2>/dev/null </dev/null || echo "")
 
             # If exists, delete it
             if [[ -n "$EXISTS" && "$EXISTS" != "" ]]; then
                 echo "🟡 Sender rule already exists for domain: $domain_with_at, deleting..."
-                if ! docker exec -i -e PGPASSWORD=${DBPASS} ${PGSQL_CONTAINER_NAME} psql -U ${DBUSER} -d ${DBNAME} \
-                    -c "DELETE FROM bm_domain_smtp_transport WHERE domain = '$escaped_domain';"; then
-                    Red_Error "❌ Failed to delete old record: $domain_with_at"
+                if docker exec -e PGPASSWORD=${DBPASS} ${PGSQL_CONTAINER_NAME} psql -U ${DBUSER} -d ${DBNAME} \
+                    -c "DELETE FROM bm_domain_smtp_transport WHERE domain = '$escaped_domain';" 2>/dev/null </dev/null; then
+                    echo "✅ Old rule deleted: $domain_with_at"
+                else
+                    echo "⚠️ Warning: Could not delete old record for $domain_with_at, continuing..."
                 fi
-                echo "✅ Old rule deleted: $domain_with_at"
             fi
 
             # Execute insertion (using secure string escaping)
             echo "📝 Inserting: $domain_with_at → $smtp_name"
             escaped_smtp=$(printf '%s\n' "$smtp_name" | sed "s/'/''/g")
             escaped_atype=$(printf '%s\n' "$atype" | sed "s/'/''/g")
-            if ! docker exec -i -e PGPASSWORD=${DBPASS} ${PGSQL_CONTAINER_NAME} psql -U ${DBUSER} -d ${DBNAME} \
-                -c "INSERT INTO bm_domain_smtp_transport (atype, domain, smtp_name) VALUES ('$escaped_atype', '$escaped_domain', '$escaped_smtp');"; then
-                Red_Error "❌ Insertion failed: $domain_with_at"
+            if docker exec -e PGPASSWORD=${DBPASS} ${PGSQL_CONTAINER_NAME} psql -U ${DBUSER} -d ${DBNAME} \
+                -c "INSERT INTO bm_domain_smtp_transport (atype, domain, smtp_name) VALUES ('$escaped_atype', '$escaped_domain', '$escaped_smtp');" 2>/dev/null </dev/null; then
+                echo "✅ Successfully inserted: $domain_with_at → $smtp_name"
+                ((INSERTED_COUNT++))
+            else
+                echo "❌ Failed to insert: $domain_with_at"
+                ((FAILED_COUNT++))
             fi
-
-            echo "✅ Successfully inserted: $domain_with_at → $smtp_name"
 
         done < "$TEMP_FILE"
 
-        echo "📝 All domain mappings have been successfully written to bm_domain_smtp_transport"
+        # Re-enable ERR trap
+        trap 'echo "� Script execution failed, triggering rollback"; rollback_compose; cleanup_apply; exit 1' ERR
+
+        echo "📝 Domain mapping summary: $INSERTED_COUNT inserted, $FAILED_COUNT failed"
+        
+        if [[ $FAILED_COUNT -gt 0 ]]; then
+            echo "⚠️ Warning: Some domains failed to insert, but continuing..."
+        fi
     fi
 
     # Update status of all records in bm_multi_ip_domain table to 'applied'
@@ -1409,7 +1424,8 @@ APPLY_MULTI_IP() {
 
     echo "========================================="
 
-    echo "⚠️💡❌ Remember: Run 'sudo nano /etc/netplan/50-cloud-init.yaml', add the IPs under addresses, and 'sudo netplan apply' for persistence."
+    echo "⚠️💡❌ Remember: Run 'sudo vi /etc/netplan/50-cloud-init.yaml', add the IPs under addresses, and 'sudo netplan apply' for persistence."
+    echo "⚠️💡❌ Remember to Check ?: Check ip addr show dev ens3 | grep \"inet \", you need to see your new ip"
 
     # Successfully completed, remove ERR trap
     trap - ERR
