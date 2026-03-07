@@ -1,45 +1,192 @@
-# BillionMail Namecheap DNS Auto-Sync
+<div align="center">
+  <a name="readme-top"></a>
+  <h1><a href="https://www.billionmail.com/" target="_blank">BillionMail 📧</a></h1>
 
-Automatically configure DNS records in Namecheap when you add domains to BillionMail.
 
-## What It Does
+## An Open-Source MailServer, NewsLetter, Email Marketing Solution for Smarter Campaigns
 
-This script monitors your BillionMail server for new domains and automatically sets up the required DNS records in Namecheap:
+[![][license-shield]][license-link] [![][docs-shield]][docs-link] [![][github-release-shield]][github-release-link] [![][github-stars-shield]][github-stars-link]
 
-- **A Records**: Root domain and mail subdomain pointing to your VPS IP
-- **MX Record**: Mail server configuration (priority 10)
-- **SPF Record**: Email authentication
-- **DMARC Record**: Email policy and reporting
-- **DKIM Records**: Email signing (default + short keys)
+English | [简体中文](README-zh_CN.md) | [日本語](README-ja.md) | [Türkçe](README-ja.md)
+</div>
+<br/>
 
-## Requirements
+<div align="center">
+<a href="https://trendshift.io/repositories/13842" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13842" alt="aaPanel%2FBillionMail | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</div>
 
-- BillionMail server running
-- Namecheap account with API access enabled
-- VPS with the script running
-- Your VPS IP whitelisted in Namecheap API settings
+## What is BillionMail?
 
-## Installation
+BillionMail is a **future open-source Mail server, Email marketing platform** designed to help businesses and individuals manage their email campaigns with ease. Whether you're sending newsletters, promotional emails, or transactional messages, this tool will provide **full control** over your email marketing efforts. With features like **advanced analytics**, and **customer management**, you'll be able to create, send, and track emails like a pro.
 
-### 1. Clone the Repository
+![BillionMail Banner](https://www.billionmail.com/home.png?v1)
 
-```bash
-git clone https://github.com/mamghar001/MoeScale-BillionMail.git
-cd MoeScale-BillionMail
+# Just 3 steps to send a billion emails!
+**Billion emails. Any business. Guaranteed.**
+
+### Step 1️⃣ Install BillionMail: 
+✅ It takes **only 8️⃣ minutes** from installation to **✅ successful email sending**
+```shell
+cd /opt && git clone https://github.com/aaPanel/BillionMail && cd BillionMail && bash install.sh
 ```
 
-### 2. Configure Environment Variables
 
-Create a `.env` file in the same directory as `dns_auto_sync.py`:
+### Step 2️⃣: Connect Your Domain
+- Add the sending domain
+- Verify DNS records
+- Auto-enable free SSL
 
-```bash
-cp .env.example .env
-nano .env
+
+### Step 3️⃣: Build Your Campaign
+
+- Write or paste your email
+- Choose list & tags
+- Set send time or send now
+
+
+<div align="center">
+  <a href="https://www.youtube.com/embed/UHgxZa_9jGs?si=0-f1B5hDtcWImvQv" target="_blank">
+    <img src="https://img.youtube.com/vi/UHgxZa_9jGs/maxresdefault.jpg" alt="" width="80%">
+    <br />
+    <img src="https://www.iconfinder.com/icons/317714/download/png/16" alt="YouTube" width="16"/>
+    <b>Watch on Youtube</b>
+  </a>
+</div>
+
+
+## Other installation methods
+
+### One-click installation on aaPanel
+👉 https://www.aapanel.com/new/download.html  (Log in to ✅aaPanel --> 🐳Docker --> 1️⃣OneClick install)
+
+
+
+
+**Docker**
+```shell
+cd /opt && git clone https://github.com/aaPanel/BillionMail && cd BillionMail && cp env_init .env && docker compose up -d || docker-compose up -d
 ```
 
-### 3. Edit the `.env` File
+## Management script
+- Management help
 
-Fill in your actual credentials:
+  `bm help`
+
+- View Login default info
+
+  `bm default`
+
+- Show domain DNS record
+
+  `bm show-record`
+
+- Update BillionMail
+
+  `bm update`
+
+## Live Demo
+BillionMail Demo: [https://demo.billionmail.com/billionmail](https://demo.billionmail.com/billionmail)
+
+Username: `billionmail` 
+
+Password: `billionmail` 
+
+
+## WebMail
+
+BillionMail has integrated **RoundCube**, you can access WebMail via `/roundcube/`.
+
+## Why BillionMail?
+
+Most email marketing platforms are either **expensive**, **closed-source**, or **lack essential features**. BillionMail aims to be different:
+
+✅ **Fully Open-Source** – No hidden costs, no vendor lock-in.  
+📊 **Advanced Analytics** – Track email delivery, open rates, click-through rates, and more.  
+📧 **Unlimited Sending** – No restrictions on the number of emails you can send.  
+🎨 **Customizable Templates** – Custom professional marketing templates for reuse.
+🔒 **Privacy-First** – Your data stays with you, no third-party tracking.  
+🚀 **Self-Hosted** – Run it on your own server for complete control.  
+
+## How You Can Help 🌟
+
+BillionMail is a **community-driven project**, and we need your support to get started! Here's how you can help:
+
+1. **Star This Repository**: Show your interest by starring this repo.  
+2. **Spread the Word**: Share BillionMail with your network—developers, marketers, and open-source enthusiasts.  
+3. **Share Feedback**: Let us know what features you'd like to see in BillionMail by opening an issue or joining the discussion.  
+4. **Contribute**: Once development begins, we'll welcome contributions from the community. Stay tuned for updates!
+
+---
+
+📧 **BillionMail – The Future of Open-Source Email Marketing.**
+
+## Issues
+
+If you encounter any issues or have feature requests, please [open an issue](https://github.com/aaPanel/BillionMail/issues). Be sure to include:
+
+- A clear description of the problem or request.
+- Steps to reproduce the issue (if applicable).
+- Screenshots or error logs (if applicable).
+
+## Install Now:
+✅It takes **only 8 minutes** from installation to **successful email sending**
+```shell
+cd /opt && git clone https://github.com/aaPanel/BillionMail && cd BillionMail && bash install.sh
+```
+
+
+**Install with Docker:** (Please install Docker and docker-compose-plugin manually, and modify .env file)
+```shell
+cd /opt && git clone https://github.com/aaPanel/BillionMail && cd BillionMail && cp env_init .env && docker compose up -d || docker-compose up -d
+```
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=aapanel/billionmail&type=Date)](https://www.star-history.com/#aapanel/billionmail&Date)
+
+## License
+
+BillionMail is licensed under the **AGPLv3 License**. This means you can:
+
+✅ Use the software for free.  
+✅ Modify and distribute the code.  
+✅ Use it privately without restrictions.
+
+See the [LICENSE](LICENSE) file for more details.
+
+---
+
+<!-- BillionMail official link -->
+[docs-link]: https://www.billionmail.com/
+
+<!-- BillionMail Other link-->
+[license-link]: https://www.gnu.org/licenses/agpl-3.0.html
+[github-release-link]: https://github.com/aaPanel/BillionMail/releases/latest
+[github-stars-link]: https://github.com/aaPanel/BillionMail
+[github-issues-link]: https://github.com/aaPanel/BillionMail/issues
+
+<!-- Shield link-->
+[docs-shield]: https://img.shields.io/badge/documentation-148F76
+[github-release-shield]: https://img.shields.io/github/v/release/aaPanel/BillionMail
+[github-stars-shield]: https://img.shields.io/github/stars/aaPanel/BillionMail?color=%231890FF&style=flat-square   
+[license-shield]: https://img.shields.io/github/license/aaPanel/BillionMail
+
+
+---
+
+## DNS Auto-Sync Setup (Namecheap)
+
+To automatically configure DNS records in Namecheap when adding domains to BillionMail:
+
+### 1. Create `.env` File
+
+Create a `.env` file in `/opt/billionmail/`:
+
+```bash
+sudo nano /opt/billionmail/.env
+```
+
+### 2. Add Your Credentials
 
 ```env
 # BillionMail API
@@ -59,112 +206,29 @@ SECONDARY_IPS=ip1,ip2,ip3
 DKIM_KEYS_PATH=/opt/billionmail/rspamd-data/dkim
 ```
 
-**⚠️ IMPORTANT: Never commit the `.env` file to Git! It's already in `.gitignore`.**
-
-### 4. Where to Put the Files
-
-On your VPS:
+### 3. Secure the File
 
 ```bash
-# Create directory
-sudo mkdir -p /opt/billionmail
+sudo chmod 600 /opt/billionmail/.env
+```
 
-# Copy files
+**⚠️ Never commit this file to Git!**
+
+### 4. Install the Script
+
+```bash
 sudo cp dns_auto_sync.py /opt/billionmail/
-sudo cp .env /opt/billionmail/
-sudo chmod 600 /opt/billionmail/.env  # Secure the credentials file
-sudo chmod +x /opt/billionmail/dns_auto_sync.py
+sudo systemctl restart billionmail-dns-sync
 ```
 
-### 5. Install as Systemd Service
+### Getting Credentials
 
-Create the service file `/etc/systemd/system/billionmail-dns-sync.service`:
+**BillionMail Token:** Settings → API in your BillionMail admin panel
 
-```ini
-[Unit]
-Description=BillionMail Namecheap DNS Auto-Sync
-After=network.target
+**Namecheap API:** Profile → Tools → API Access (enable API and whitelist your VPS IP)
 
-[Service]
-Type=simple
-WorkingDirectory=/opt/billionmail
-ExecStart=/usr/bin/python3 /opt/billionmail/dns_auto_sync.py
-Restart=always
-RestartSec=10
+### Troubleshooting
 
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable billionmail-dns-sync
-sudo systemctl start billionmail-dns-sync
-```
-
-### 6. Check Status
-
-```bash
-# View service status
-sudo systemctl status billionmail-dns-sync
-
-# View logs
-sudo journalctl -u billionmail-dns-sync -f
-```
-
-## How It Works
-
-1. **Every 60 seconds**, the script checks BillionMail for domains
-2. **When a new domain is found**, it automatically:
-   - Disables Namecheap email forwarding (`EmailType=MX`)
-   - Sets A records for root and mail subdomain
-   - Configures MX record pointing to `mail.yourdomain.com`
-   - Adds SPF, DMARC, and DKIM TXT records
-   - Refreshes BillionMail DNS cache
-3. **Logs everything** so you can monitor progress
-
-## Getting Your Credentials
-
-### BillionMail API Token
-
-1. Login to your BillionMail admin panel
-2. Go to Settings → API
-3. Copy your API token
-
-### Namecheap API Access
-
-1. Login to Namecheap
-2. Go to Profile → Tools → API Access
-3. Enable API access
-4. Whitelist your VPS IP address
-5. Copy your API Key
-
-## Troubleshooting
-
-### MX Record Not Working
-
-Make sure you included `EmailType=MX` in the Namecheap API calls (this script does it automatically). Without this, Namecheap uses email forwarding instead of custom MX.
-
-### "Invalid request IP" Error
-
-Your VPS IP is not whitelisted in Namecheap API settings. Add it at:
-https://ap.www.namecheap.com/settings/tools/apiaccess/whitelist
-
-### Script Not Detecting Domains
-
-Check the logs:
-```bash
-sudo journalctl -u billionmail-dns-sync -f
-```
-
-## Security Notes
-
-- **Never commit `.env` to Git** - it contains sensitive credentials
-- **Keep `.env` permissions at 600** - only readable by root
-- **Rotate API keys periodically** - good security practice
-
-## License
-
-GNU Affero General Public License v3.0
+- **"Invalid request IP"**: Add your VPS IP to Namecheap API whitelist
+- **MX not working**: The script automatically sets `EmailType=MX` to disable Namecheap forwarding
+- Check logs: `sudo journalctl -u billionmail-dns-sync -f`
