@@ -1190,18 +1190,15 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 	senderName := currentTask.FullName
 
 	if currentTask.RotateSenders == 1 {
-		// Get all mailboxes for the sender's domain
-		domain := extractDomain(currentTask.Addresser)
-		if domain != "" {
-			mailboxes, err := getMailboxesByDomain(ctx, domain)
-			if err != nil {
-				g.Log().Warning(ctx, "failed to get mailboxes for domain %s: %v, using original sender", domain, err)
-			} else if len(mailboxes) > 0 {
-				// Select mailbox based on recipient ID for consistent rotation
-				selected := selectRotatedSender(mailboxes, recipient.Id)
-				senderEmail = selected.Username
-				senderName = selected.FullName
-			}
+		// Get all mailboxes across all domains for cross-domain rotation
+		mailboxes, err := getAllMailboxes(ctx)
+		if err != nil {
+			g.Log().Warning(ctx, "failed to get all mailboxes: %v, using original sender", err)
+		} else if len(mailboxes) > 0 {
+			// Select mailbox based on recipient ID for consistent rotation
+			selected := selectRotatedSender(mailboxes, recipient.Id)
+			senderEmail = selected.Username
+			senderName = selected.FullName
 		}
 	}
 
@@ -1283,18 +1280,15 @@ func (e *TaskExecutor) sendEmailMock(ctx context.Context, task *entity.EmailTask
 	senderName := task.FullName
 
 	if task.RotateSenders == 1 {
-		// Get all mailboxes for the sender's domain
-		domain := extractDomain(task.Addresser)
-		if domain != "" {
-			mailboxes, err := getMailboxesByDomain(ctx, domain)
-			if err != nil {
-				g.Log().Warning(ctx, "failed to get mailboxes for domain %s: %v, using original sender", domain, err)
-			} else if len(mailboxes) > 0 {
-				// Select mailbox based on recipient ID for consistent rotation
-				selected := selectRotatedSender(mailboxes, recipient.Id)
-				senderEmail = selected.Username
-				senderName = selected.FullName
-			}
+		// Get all mailboxes across all domains for cross-domain rotation
+		mailboxes, err := getAllMailboxes(ctx)
+		if err != nil {
+			g.Log().Warning(ctx, "failed to get all mailboxes: %v, using original sender", err)
+		} else if len(mailboxes) > 0 {
+			// Select mailbox based on recipient ID for consistent rotation
+			selected := selectRotatedSender(mailboxes, recipient.Id)
+			senderEmail = selected.Username
+			senderName = selected.FullName
 		}
 	}
 
@@ -1605,6 +1599,32 @@ func getMailboxesByDomain(ctx context.Context, domain string) ([]MailboxInfo, er
 	var mailboxes []MailboxInfo
 	err := g.DB().Model("mailbox").
 		Where("domain", domain).
+		Where("active", 1).
+		Order("username ASC").
+		Scan(&mailboxes)
+	if err != nil {
+		return nil, err
+	}
+	return mailboxes, nil
+}
+
+// getAllMailboxes returns all active mailboxes across all domains
+func getAllMailboxes(ctx context.Context) ([]MailboxInfo, error) {
+	var mailboxes []MailboxInfo
+	err := g.DB().Model("mailbox").
+		Where("active", 1).
+		Order("username ASC").
+		Scan(&mailboxes)
+	if err != nil {
+		return nil, err
+	}
+	return mailboxes, nil
+}
+
+// getAllMailboxes returns all active mailboxes across all domains
+func getAllMailboxes(ctx context.Context) ([]MailboxInfo, error) {
+	var mailboxes []MailboxInfo
+	err := g.DB().Model("mailbox").
 		Where("active", 1).
 		Order("username ASC").
 		Scan(&mailboxes)
