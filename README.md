@@ -86,3 +86,135 @@ When you add a domain in BillionMail (manually or via API), this script:
 ## License
 
 MIT
+
+---
+
+# 🚀 Deploy & Rebuild Guide
+
+Quick commands to deploy code changes to your running BillionMail.
+
+## 📋 Command Summary
+
+| Command | What it does | When to use |
+|---------|--------------|-------------|
+| `bm rebuild-frontend` | Builds frontend UI and copies to container | After editing `.vue` or frontend files |
+| `sudo bash deploy-updated.sh --quick` | Patches JS files + restarts container | Quick deploy without building |
+| `sudo bash deploy-updated.sh` | Full build + deploy | When you want clean build |
+| `bm restart` | Restarts all containers | After config changes |
+| `bm restart-service core` | Restarts only core container | Quick restart without rebuild |
+
+---
+
+## ⚡ Quick Deploy (Recommended for Development)
+
+Fastest way - patches built files directly, no build needed:
+
+```bash
+cd /opt/billionmail
+sudo bash deploy-updated.sh --quick
+```
+
+**What it does:**
+1. Patches `rotate_senders: 0` → `1` in JS files
+2. Restarts core container
+3. ✅ Done in 10 seconds
+
+---
+
+## 🏗️ Full Frontend Rebuild
+
+When you need clean build (uses Docker, no Node.js needed on host):
+
+```bash
+bm rebuild-frontend
+```
+
+**What it does:**
+1. Builds frontend with `node:20-alpine` Docker image
+2. Copies `core/frontend/dist/` → `core/public/dist/`
+3. Copies files to running container
+4. Restarts core container
+
+---
+
+## 🔧 Backend Rebuild (Go Binary)
+
+Only needed if you modify `.go` files:
+
+```bash
+cd /opt/billionmail/core
+
+# Build for x86 (most servers)
+go build -ldflags="-s -w" -o billionmail-amd64 main.go
+
+# Copy to main binary
+cp billionmail-amd64 billionmail
+
+# Restart to use new binary
+cd /opt/billionmail
+bm restart-service core
+```
+
+**Requires:** Go 1.22+ (if not available, use Docker method in `go-build.sh`)
+
+---
+
+## 🔄 Standard Management Commands
+
+```bash
+# Restart everything
+bm restart
+
+# Restart just the web UI (core)
+bm restart-service core
+
+# Check status
+bm status
+
+# View logs
+bm log-container core
+
+# Full rebuild all containers (⚠️ longer downtime)
+bm rebuild
+```
+
+---
+
+## 📝 When to Use What?
+
+| Situation | Command |
+|-----------|---------|
+| Changed `.vue` or frontend | `bm rebuild-frontend` |
+| Changed `.go` files | Build binary + `bm restart-service core` |
+| Quick test (patched files) | `sudo bash deploy-updated.sh --quick` |
+| Config changes only | `bm restart` |
+| Everything broken | `bm rebuild` |
+
+---
+
+## 🐛 Troubleshooting
+
+**Changes not showing?**
+- Hard refresh browser: `Ctrl+Shift+R`
+- Check: `bm log-container core | tail -20`
+
+**Build fails?**
+- Use `--quick` mode (patches files directly)
+- Or use `bm rebuild-frontend` (uses Docker)
+
+**Container won't start?**
+- Check logs: `bm log-container core`
+- Restore backup: `docker-compose -f docker-compose.yml.backup.XXX up -d`
+
+---
+
+## 📁 File Locations
+
+| Type | Location |
+|------|----------|
+| Frontend source | `core/frontend/src/` |
+| Frontend built | `core/public/dist/` |
+| Backend source | `core/internal/` |
+| Backend binary | `core/billionmail` |
+| Configs | `conf/` |
+| Deploy scripts | `deploy-updated.sh`, `bm` |
