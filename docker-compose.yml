@@ -180,7 +180,10 @@ services:
             - webmail
 
     core-billionmail:
-      image: billionmail/core:rotate-v2
+      build:
+        context: .
+        dockerfile: Dockerfile.debian
+      image: billionmail/core:rotate
       hostname: core-manage
       depends_on:
         - pgsql-billionmail
