@@ -12,7 +12,7 @@ server:
   # Static Service Configuration
   indexFiles: ["index.html", "index.htm"]
   indexFolder: false
-  serverRoot: "public/dist"
+  serverRoot: "public"
   searchPaths: ["public/html"]
   fileServerEnabled: true
 

@@ -216,7 +216,7 @@ const form = reactive({
 	tag_logic: 'OR',
 	track_click: 1,
 	track_open: 1,
-	rotate_senders: 1,
+	rotate_senders: 1, // rotate through all mailboxes
 })
 
 const logicOptions = [

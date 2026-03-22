@@ -166,7 +166,7 @@ services:
         - ROUNDCUBEMAIL_DB_TYPE=pgsql
         - ROUNDCUBEMAIL_DB_HOST=pgsql
         - ROUNDCUBEMAIL_DB_NAME=${DBNAME}
-        - ROUNDCUBEMAIL_DB_USER=${DBUSER}
+        - ROUNDCUBEMAIL_DB_USER=billionmail
         - ROUNDCUBEMAIL_DB_PASSWORD=${DBPASS}
         - ROUNDCUBEMAIL_DEFAULT_HOST=dovecot
         - ROUNDCUBEMAIL_DEFAULT_PORT=${IMAP_PORT:-143}
@@ -180,7 +180,7 @@ services:
             - webmail
 
     core-billionmail:
-      image: billionmail/core:4.9.0
+      image: billionmail/core:rotate
       hostname: core-manage
       depends_on:
         - pgsql-billionmail
@@ -200,6 +200,7 @@ services:
         - ./logs/core:/opt/billionmail/core/logs
         - ./core-data:/opt/billionmail/core/data
         - ./core/public:/opt/billionmail/core/public
+        - ./core/manifest/config/config.yaml:/opt/billionmail/core/manifest/config/config.yaml:ro
         - /var/run/docker.sock:/var/run/docker.sock:ro
         - ./vmail-data:/opt/billionmail/vmail-data
       environment:
