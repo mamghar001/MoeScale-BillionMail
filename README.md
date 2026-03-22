@@ -1,5 +1,16 @@
 # BillionMail Namecheap DNS Auto-Sync
 
+> **🚀 Quick Start - Use the Latest Stable Release:**
+> ```bash
+> # Clone the latest stable version (MoeScale V4.9.0)
+> git clone -b MoeScale-V4.9.0 https://github.com/mamghar001/MoeScale-BillionMail.git
+> 
+> # Or checkout the tag after cloning
+> git checkout MoeScale-V4.9.0
+> ```
+> 
+> **Why use a tag?** Tags are permanent snapshots that never change - perfect for production!
+
 Automatically syncs DNS records between BillionMail and Namecheap when domains are added.
 
 ## What it does
@@ -82,6 +93,51 @@ When you add a domain in BillionMail (manually or via API), this script:
   ```
 - The script runs as a systemd service and auto-starts on boot
 - Logs are available via `journalctl`
+
+## 📦 Releases & Tags
+
+### Latest Stable Release: `MoeScale-V4.9.0`
+
+To use the **stable version** (recommended for production):
+
+```bash
+# Clone directly to the stable tag
+git clone -b MoeScale-V4.9.0 https://github.com/mamghar001/MoeScale-BillionMail.git
+
+# Or checkout the tag after cloning
+git checkout MoeScale-V4.9.0
+```
+
+### View All Available Tags
+
+```bash
+git tag -l
+```
+
+### Tag vs Branch - What's the Difference?
+
+| Tag 🏷️ | Branch 🌿 |
+|---------|-----------|
+| **Frozen snapshot** - never changes | **Active timeline** - keeps moving |
+| Perfect for releases | Perfect for development |
+| Always points to same commit | Gets new commits |
+| Safe backup point | Working area |
+
+**Think of it like this:**
+- 📸 **Tag** = A photograph (preserves a moment)
+- 🛣️ **Branch** = A road (keeps extending)
+
+### How to Go Back to Safe Version
+
+If something breaks on the main branch:
+
+```bash
+# Switch to the safe tagged version
+git checkout MoeScale-V4.9.0
+
+# Or create a new branch from the tag
+git checkout -b my-fix-branch MoeScale-V4.9.0
+```
 
 ## License
 
