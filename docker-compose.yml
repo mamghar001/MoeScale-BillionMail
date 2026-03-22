@@ -180,7 +180,7 @@ services:
             - webmail
 
     core-billionmail:
-      image: billionmail/core:rotate
+      image: billionmail/core:rotate-v2
       hostname: core-manage
       depends_on:
         - pgsql-billionmail
