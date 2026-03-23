@@ -1,0 +1,32 @@
+name: billionmail
+
+services:
+  postfix-billionmail:
+    networks:
+      billionmail-network:
+        ipv4_address: 172.66.1.100
+        aliases:
+          - postfix
+      billionmail-network-2:
+        ipv4_address: 172.66.2.100
+        aliases:
+          - postfix-2
+
+networks:
+  billionmail-network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-billionmail
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.66.1.0/24
+
+  billionmail-network-2:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-billionmail-2
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.66.2.0/24
