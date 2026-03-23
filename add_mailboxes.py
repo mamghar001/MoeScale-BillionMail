@@ -17,7 +17,7 @@ urllib3.disable_warnings()
 API_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2NvdW50SWQiOjEsInVzZXJuYW1lIjoiRmxxZGZ1VkgiLCJyb2xlcyI6WyJhZG1pbiJdLCJhcGlUb2tlbiI6dHJ1ZSwiaXNzIjoiYmlsbGlvbi1tYWlsIiwic3ViIjoiYXBpX3Rva2VuIiwibmJmIjoxNzc0MjA4OTYyLCJpYXQiOjE3NzQyMDg5NjIsImp0aSI6InY2YngwdDBvMDAwZGg5a2w1N3NlYm1mMTAwOWU4cmNndjZieDB0MG8wMDBkaDlrbDU3c2VqbngyMDAxbDVpdG8ifQ.QSnxA6E40wWzX6U--DRwN_2LUDjljTa2_if0SZKBloA"
 API_BASE = "https://66.55.64.133/api"
 PASSWORD = "mokanaBillionmailMoescale321890"
-MAILBOXES_PER_DOMAIN = 10  # TEST MODE: 10 per domain
+MAILBOXES_PER_DOMAIN = 100  # TEST MODE: 10 per domain
 
 # American female names
 FIRST_NAMES = [
