@@ -143,3 +143,6 @@ stop-supervisor.sh
 fail2ban.conf
 supervisord.conf
 custom-postfix/
+
+# Allow empty recipient_bcc map (required for Postfix)
+!conf/postfix/conf/recipient_bcc
