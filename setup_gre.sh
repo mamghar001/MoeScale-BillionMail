@@ -54,3 +54,7 @@ for i in $(seq 33 44); do
 done
 
 echo "All GRE IPs added to eth0"
+
+# Route Docker network traffic through GRE tunnel
+ip rule add from 172.66.2.0/24 lookup 20 priority 1000 2>/dev/null || true
+ip rule add from 172.66.1.0/24 lookup 20 priority 1001 2>/dev/null || true
