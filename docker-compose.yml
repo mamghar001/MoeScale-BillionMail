@@ -183,7 +183,7 @@ services:
       build:
         context: .
         dockerfile: Dockerfile.debian
-      image: billionmail/core:rotate
+      image: billionmail/core:4.9.0
       hostname: core-manage
       depends_on:
         - pgsql-billionmail
