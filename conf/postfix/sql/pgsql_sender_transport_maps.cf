@@ -1,0 +1,6 @@
+user = billionmail
+password = billionmail123
+hosts = pgsql
+dbname = billionmail
+
+query = SELECT CONCAT(smtp_name, ':') FROM bm_domain_smtp_transport WHERE domain = '%s' LIMIT 1

@@ -141,3 +141,8 @@ scache    unix  -       -       n       -       1       scache
 #mailman   unix  -       n       n       -       -       pipe
 #  flags=FR user=list argv=/usr/lib/mailman/bin/postfix-to-mailman.py
 #  ${nexthop} ${user}
+
+# BEGIN BILLIONMAIL multi-ip services
+smtp_bind_ip_85_121_241_250_20260328030746 unix  -       -       n       -       -       smtp
+    -o smtp_bind_address=85.121.241.250
+# END BILLIONMAIL multi-ip services

@@ -1,0 +1,7 @@
+user = billionmail
+password = billionmail123
+hosts = pgsql
+dbname = billionmail
+
+query = SELECT maildir FROM mailbox WHERE username='%s' AND active = 1
+

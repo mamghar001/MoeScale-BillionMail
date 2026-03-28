@@ -1,145 +1,29 @@
-# ============================================
-# Environment & Secrets - DO NOT COMMIT
-# ============================================
+# Sensitive
 .env
-.env.example
-DBPASS_file.pl
-billionmail.conf
+.env.*
+*.pem
+*.key
 
-# ============================================
-# Build Artifacts & Binaries
-# ============================================
-# Go binaries
-core/billionmail
-core/billionmail-*
-!core/billionmail/.gitkeep
+# Backups
+docker-compose.yml.bak.*
+docker-compose.yml.before-fix.*
+docker-compose.yml.fixed
+docker-compose.yml.backup*
 
-# Frontend build outputs
-core/frontend/node_modules/
-core/frontend/.pnpm-store/
-core/frontend/dist/
-core/frontend/package-lock.json
-core/public/dist/
-core/public/static/
-core/public/index.html
-core/public/favicon.ico
-
-# ============================================
-# Data Directories - Runtime Data
-# ============================================
-# Mail data
-vmail-data/
-postfix-data/
-rspamd-data/
-
-# Database
+# Data & Logs
 postgresql-data/
-postgresql-socket/
 redis-data/
-
-# Application data
-core-data/
-webmail-data/
-php-sock/
-
-# Logs
+rspamd-data/
+vmail-data/
 logs/
-backup/
+*.log
 
-# ============================================
-# SSL Certificates
-# ============================================
+# SSL
 ssl/
 ssl-self-signed/
 
-# ============================================
-# Configuration - Server Specific
-# ============================================
-# Runtime configs
-conf/postfix/conf/
-conf/postfix/sql/
-conf/postfix/main.cf
-conf/postfix/master.cf
-conf/postfix/conf/vmail_ssl.map
-conf/postfix/conf/vmail_ssl.map.db
-conf/postfix/conf/extra.cf
-
-conf/dovecot/conf.d/dovecot-sql.conf.ext
-conf/dovecot/conf.d/extra.cf
-conf/dovecot/conf.d/10-ssl.conf
-conf/dovecot/conf.d/20-pop3.conf
-conf/dovecot/conf.d/90-quota.conf
-conf/dovecot/conf.d/10-master.conf
-conf/dovecot/dovecot.conf
-
-conf/rspamd/local.d/dkim_signing.conf
-conf/rspamd/local.d/redis.conf
-conf/rspamd/local.d/worker-controller.inc
-
-conf/core/fail2ban/
-conf/askai/
-conf/chat/
-conf/supplier/
-conf/tokens_cache/
-
-conf/php/php/conf.d/
-
-# ============================================
-# Python
-# ============================================
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
-# ============================================
-# IDE & Editor
-# ============================================
-.vscode/
-.idea/
-*.swp
-*.swo
-*.iml
-.cursor/
-
-# ============================================
-# Temporary & Backup Files
-# ============================================
-*.log
-*.bak
-*.backup*
-docker-compose.yml.backup*
-docker-compose.yml.bak*
-docker-compose_*.yml
-
-# Backup scripts
-core/internal/service/batch_mail/task_executor.go.backup*
-core/internal/service/batch_mail/task_executor.go.broken
-core/internal/service/batch_mail/task_executor.go.fixed
-
-# Misc temp files
-PYEOF
-temp/
-test/
-config/*
-
-# ============================================
-# Deployment Scripts (local use only)
-# ============================================
-deploy-updated.sh
-update-and-deploy.sh
-
-# ============================================
-# Other
-# ============================================
-bm
-Dockerfile.debian
-container-backup.json
-billionmail-wrapper.sh
-core.sh
-restart_fail2ban.sh
-stop-supervisor.sh
-fail2ban.conf
-supervisord.conf
-custom-postfix/
+# Helper scripts (not part of core)
+commit_and_push.sh
+push_clean.sh
+PUSH_TO_GITHUB.md
+*.py.backup

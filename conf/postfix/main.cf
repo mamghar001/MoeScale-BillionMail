@@ -76,8 +76,11 @@ message_size_limit = 102400000
 ## Do not delete the following identification configuration
 # Overrides-configuration #
 
-myhostname = affiliategrowth.shop
-smtp_helo_name = mail.affiliategrowth.shop
+myhostname = b2bscale.xyz
+smtp_helo_name = mail.b2bscale.xyz
 smtp_bind_address = 85.121.241.250
 
 recipient_bcc_maps = hash:/etc/postfix/conf/recipient_bcc
+
+# sender_dependent_relayhost_maps = pgsql:/etc/postfix/sql/pgsql_sender_relay_maps.cf
+sender_dependent_default_transport_maps = pgsql:/etc/postfix/sql/pgsql_sender_transport_maps.cf
