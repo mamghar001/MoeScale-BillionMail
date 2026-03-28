@@ -1,276 +1,227 @@
-# BillionMail Namecheap DNS Auto-Sync
+# BillionMail - MoeScale Edition
 
-> **🚀 Quick Start - Use the Latest Stable Release:**
+> **🚀 ONE-COMMAND INSTALL (Recommended):**
 > ```bash
-> # Clone the latest stable version (MoeScale V4.9.0)
-> git clone -b MoeScale-V4.9.0 https://github.com/mamghar001/MoeScale-BillionMail.git
-> 
-> # Or checkout the tag after cloning
-> git checkout MoeScale-V4.9.0
+> sudo curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/moescale-fixed/one-command-install.sh | sudo bash
 > ```
-> 
-> **Why use a tag?** Tags are permanent snapshots that never change - perfect for production!
+> This installs the latest working version with all fixes applied!
 
-Automatically syncs DNS records between BillionMail and Namecheap when domains are added.
+---
 
-## What it does
+## 📦 Quick Start Options
 
-1. Monitors BillionMail API for newly added domains
-2. Automatically sets correct DNS records (A, MX, SPF, DKIM, DMARC) in Namecheap
-3. Refreshes DNS validation in BillionMail
-
-## Requirements
-
-- BillionMail installed and running
-- Namecheap API access with whitelisted IP
-- Python 3 with requests module
-
-## Setup
-
-### 1. Namecheap API Whitelist
-
-You MUST add your VPS IP to Namecheap API whitelist:
-- Go to Namecheap → Profile → Tools → API Access
-- Add your VPS IP: `85.121.241.162`
-- Save settings
-
-### 2. Install Script
-
+### Option 1: One-Command Install (Easiest)
 ```bash
-sudo cp dns_auto_sync.py /opt/billionmail/
-sudo cp billionmail-dns-sync.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable billionmail-dns-sync
-sudo systemctl start billionmail-dns-sync
+sudo curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/moescale-fixed/one-command-install.sh | sudo bash
 ```
 
-### 3. View Logs
+This script will:
+- Check your system requirements
+- Install Docker & dependencies
+- Ask for your domain and configuration
+- Set up IP addresses
+- Clone and install BillionMail V5.0.0
+- Configure everything automatically
 
+### Option 2: Manual Install
 ```bash
-sudo journalctl -u billionmail-dns-sync -f
-```
-
-## Configuration
-
-Edit the script to set your credentials:
-
-```python
-# BillionMail API
-BILLIONMAIL_TOKEN = "your_token_here"
-
-# Namecheap API
-NAMECHEAP_API_USER = "your_username"
-NAMECHEAP_API_KEY = "your_api_key"
-
-# VPS IP
-VPS_IP = "85.121.241.162"
-```
-
-## How it works
-
-When you add a domain in BillionMail (manually or via API), this script:
-
-1. Detects the new domain within 60 seconds
-2. Reads DKIM keys from BillionMail's rspamd-data folder
-3. Sets DNS records in Namecheap:
-   - A record: root domain → VPS IP
-   - A record: mail subdomain → VPS IP
-   - MX record: @ → mail.domain.com
-   - SPF record: v=spf1 +ip4:85.121.241.162 ~all
-   - DMARC record: v=DMARC1;p=quarantine;rua=mailto:dmarc@domain
-   - DKIM default + short keys
-4. Refreshes BillionMail DNS validation
-
-## Important Notes
-
-- When adding domains via BillionMail API, always include `hostname` field:
-  ```json
-  {
-    "domain": "example.com",
-    "hostname": "mail.example.com",
-    ...
-  }
-  ```
-- The script runs as a systemd service and auto-starts on boot
-- Logs are available via `journalctl`
-
-## 📦 Releases & Tags
-
-### Latest Stable Release: `MoeScale-V4.9.0`
-
-To use the **stable version** (recommended for production):
-
-```bash
-# Clone directly to the stable tag
-git clone -b MoeScale-V4.9.0 https://github.com/mamghar001/MoeScale-BillionMail.git
+# Clone the latest stable version (MoeScale V5.0.0)
+git clone -b MoeScale-V5.0.0 https://github.com/mamghar001/MoeScale-BillionMail.git
 
 # Or checkout the tag after cloning
-git checkout MoeScale-V4.9.0
+git checkout MoeScale-V5.0.0
 ```
 
-### View All Available Tags
-
-```bash
-git tag -l
-```
-
-### Tag vs Branch - What's the Difference?
-
-| Tag 🏷️ | Branch 🌿 |
-|---------|-----------|
-| **Frozen snapshot** - never changes | **Active timeline** - keeps moving |
-| Perfect for releases | Perfect for development |
-| Always points to same commit | Gets new commits |
-| Safe backup point | Working area |
-
-**Think of it like this:**
-- 📸 **Tag** = A photograph (preserves a moment)
-- 🛣️ **Branch** = A road (keeps extending)
-
-### How to Go Back to Safe Version
-
-If something breaks on the main branch:
-
-```bash
-# Switch to the safe tagged version
-git checkout MoeScale-V4.9.0
-
-# Or create a new branch from the tag
-git checkout -b my-fix-branch MoeScale-V4.9.0
-```
-
-## License
-
-MIT
+**Why use V5.0.0?** This version includes critical fixes for:
+- Multi-IP configuration
+- Database connection issues
+- SPF record problems
+- External email delivery
 
 ---
 
-# 🚀 Deploy & Rebuild Guide
+## ✨ What's New in V5.0.0
 
-Quick commands to deploy code changes to your running BillionMail.
-
-## 📋 Command Summary
-
-| Command | What it does | When to use |
-|---------|--------------|-------------|
-| `bm rebuild-frontend` | Builds frontend UI and copies to container | After editing `.vue` or frontend files |
-| `sudo bash deploy-updated.sh --quick` | Patches JS files + restarts container | Quick deploy without building |
-| `sudo bash deploy-updated.sh` | Full build + deploy | When you want clean build |
-| `bm restart` | Restarts all containers | After config changes |
-| `bm restart-service core` | Restarts only core container | Quick restart without rebuild |
+### Critical Fixes Applied:
+1. **Network Configuration** - Fixed Docker subnet mismatch (172.66.2.0/24)
+2. **Database Passwords** - Fixed all SQL config files
+3. **Postfix Configuration** - Fixed myhostname and multi-IP routing
+4. **SPF Records** - Disabled broken relayhost_maps causing failures
+5. **External Delivery** - Emails now deliver to mail-tester.com and external providers
 
 ---
 
-## ⚡ Quick Deploy (Recommended for Development)
+## 📋 Prerequisites
 
-Fastest way - patches built files directly, no build needed:
+Before installing, ensure you have:
+
+1. **VPS Requirements:**
+   - Ubuntu 20.04 or 22.04
+   - 4GB+ RAM
+   - 20GB+ disk space
+   - Root access
+
+2. **IP Addresses:**
+   - Primary IP assigned to your VPS
+   - Any additional IPs you want to use for multi-domain sending
+
+3. **DNS Records (set these up BEFORE installing):**
+   - A record: `@` → Your server IP
+   - A record: `mail` → Your server IP
+   - MX record: `@` → `mail.yourdomain.com` (priority 10)
+   - SPF record: `v=spf1 +a +mx +ip4:YOUR_IP ~all`
+
+4. **Ports Open:**
+   - 25, 465, 587 (SMTP)
+   - 80, 443 (Web)
+   - 110, 143, 993, 995 (POP3/IMAP)
+
+---
+
+## 🚀 Installation
+
+### One-Command Install:
+```bash
+sudo curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/moescale-fixed/one-command-install.sh | sudo bash
+```
+
+The script will guide you through:
+- Domain setup
+- IP configuration
+- Admin credentials
+- Optional SMTP relay (for reliable Gmail/Hotmail delivery)
+
+### After Installation:
+
+1. **Access BillionMail:**
+   ```
+   https://YOUR_IP/admin-path
+   ```
+
+2. **Add your domain in the web UI:**
+   - Go to Domain Management
+   - Add your domain
+   - Generate DKIM keys
+   - Add DKIM TXT records to DNS
+
+3. **Test email delivery:**
+   ```bash
+   echo "Test email" | sendmail -v your-email@gmail.com
+   ```
+
+---
+
+## 🔧 Management Commands
+
+After installation, use the `bm` command:
 
 ```bash
 cd /opt/billionmail
-sudo bash deploy-updated.sh --quick
-```
 
-**What it does:**
-1. Patches `rotate_senders: 0` → `1` in JS files
-2. Restarts core container
-3. ✅ Done in 10 seconds
+# View status
+sudo bash bm.sh status
 
----
+# Restart all services
+sudo bash bm.sh restart
 
-## 🏗️ Full Frontend Rebuild
-
-When you need clean build (uses Docker, no Node.js needed on host):
-
-```bash
-bm rebuild-frontend
-```
-
-**What it does:**
-1. Builds frontend with `node:20-alpine` Docker image
-2. Copies `core/frontend/dist/` → `core/public/dist/`
-3. Copies files to running container
-4. Restarts core container
-
----
-
-## 🔧 Backend Rebuild (Go Binary)
-
-Only needed if you modify `.go` files:
-
-```bash
-cd /opt/billionmail/core
-
-# Build for x86 (most servers)
-go build -ldflags="-s -w" -o billionmail-amd64 main.go
-
-# Copy to main binary
-cp billionmail-amd64 billionmail
-
-# Restart to use new binary
-cd /opt/billionmail
-bm restart-service core
-```
-
-**Requires:** Go 1.22+ (if not available, use Docker method in `go-build.sh`)
-
----
-
-## 🔄 Standard Management Commands
-
-```bash
-# Restart everything
-bm restart
-
-# Restart just the web UI (core)
-bm restart-service core
-
-# Check status
-bm status
+# Restart specific service
+sudo bash bm.sh restart-service postfix
 
 # View logs
-bm log-container core
+sudo bash bm.sh log-container postfix
+sudo bash bm.sh log-file postfix
 
-# Full rebuild all containers (⚠️ longer downtime)
-bm rebuild
+# Multi-IP setup (after adding domains)
+sudo bash bm.sh multi_ip
 ```
 
 ---
 
-## 📝 When to Use What?
+## ⚠️ Important Notes
 
-| Situation | Command |
-|-----------|---------|
-| Changed `.vue` or frontend | `bm rebuild-frontend` |
-| Changed `.go` files | Build binary + `bm restart-service core` |
-| Quick test (patched files) | `sudo bash deploy-updated.sh --quick` |
-| Config changes only | `bm restart` |
-| Everything broken | `bm rebuild` |
+### IP Reputation & Gmail/Hotmail
+
+**Your IPs may be blocked initially** by Gmail and Hotmail due to:
+- Fresh IP with no sending history
+- Possible blocklist presence
+
+**Solutions:**
+1. **Use SMTP Relay** (Recommended) - Set up during install or run:
+   ```bash
+   sudo bash /opt/billionmail/setup_smtp_relay.sh
+   ```
+   This routes emails through SendGrid/Amazon SES for immediate delivery.
+
+2. **IP Warmup** - Send gradually (10-50 emails/day) for 2-4 weeks
+
+3. **Check Blocklists:**
+   - https://www.spamhaus.org/query/ip/YOUR_IP
+   - https://mxtoolbox.com/blacklists.aspx
+
+### DNS Configuration
+
+**SPF Record Example (include ALL your IPs):**
+```
+v=spf1 +a +mx +ip4:85.121.241.162 +ip4:85.121.241.250 +ip4:85.121.241.251 ~all
+```
 
 ---
 
 ## 🐛 Troubleshooting
 
-**Changes not showing?**
-- Hard refresh browser: `Ctrl+Shift+R`
-- Check: `bm log-container core | tail -20`
+### Issue: "address resolver failure"
+**Fix:** Database passwords were wrong - fixed in V5.0.0
 
-**Build fails?**
-- Use `--quick` mode (patches files directly)
-- Or use `bm rebuild-frontend` (uses Docker)
+### Issue: "SPF fail - not authorized"
+**Fix:** Update SPF record to include your server's IP
 
-**Container won't start?**
-- Check logs: `bm log-container core`
-- Restore backup: `docker-compose -f docker-compose.yml.backup.XXX up -d`
+### Issue: "The IP you're using to send mail is not authorized"
+**Fix:** This is Gmail blocking your IP. Use SMTP relay or wait for IP warmup.
+
+### Check logs:
+```bash
+sudo tail -f /opt/billionmail/logs/postfix/mail.log
+```
 
 ---
 
-## 📁 File Locations
+## 📂 Repository Structure
 
-| Type | Location |
-|------|----------|
-| Frontend source | `core/frontend/src/` |
-| Frontend built | `core/public/dist/` |
-| Backend source | `core/internal/` |
-| Backend binary | `core/billionmail` |
-| Configs | `conf/` |
-| Deploy scripts | `deploy-updated.sh`, `bm` |
+```
+.
+├── conf/               # Configuration files (Postfix, Dovecot, etc.)
+├── core/               # BillionMail core application
+├── one-command-install.sh  # ⭐ One-command installer
+├── bm.sh               # Management script
+├── install.sh          # Traditional installer
+├── docker-compose.yml  # Docker configuration
+└── README.md           # This file
+```
+
+---
+
+## 🏷️ Releases
+
+| Version | Status | Notes |
+|---------|--------|-------|
+| MoeScale-V5.0.0 | ✅ Latest | Working version with all fixes |
+| MoeScale-V4.9.0 | ⚠️ Old | Has bugs (database, network, SPF) |
+
+**Always use V5.0.0 or newer for fresh installs.**
+
+---
+
+## 📞 Support
+
+- **Issues:** https://github.com/mamghar001/MoeScale-BillionMail/issues
+- **Releases:** https://github.com/mamghar001/MoeScale-BillionMail/releases
+
+---
+
+## 📝 License
+
+MIT License - See original BillionMail repository for details.
+
+---
+
+**⭐ Star this repository if it helps you!**
