@@ -51,13 +51,14 @@ Before installing, complete these steps:
 - [ ] Ports open: 25, 465, 587, 80, 443, 110, 143, 993, 995
 
 ### 2. Domain & DNS Setup
-- [ ] Register your domain (e.g., b2bscale.xyz)
+- [ ] Register your domain (e.g., example.com)
 - [ ] Point domain to your VPS IP:
   - A record: `@` → Your VPS IP
   - A record: `mail` → Your VPS IP
   - MX record: `@` → `mail.yourdomain.com` (priority 10)
   - SPF: `v=spf1 +a +mx +ip4:YOUR_IP ~all`
   - DMARC: `v=DMARC1;p=quarantine;rua=mailto:dmarc@yourdomain.com`
+  - (After install) DKIM: Add keys from BillionMail web UI
 
 ### 3. IP Configuration
 - [ ] Primary IP assigned to VPS
@@ -98,28 +99,13 @@ Before installing, complete these steps:
 
 ## 📋 Prerequisites
 
-Before installing, ensure you have:
+See the [✅ Setup Checklist](#-setup-checklist) above for complete requirements.
 
-1. **VPS Requirements:**
-   - Ubuntu 20.04 or 22.04
-   - 4GB+ RAM
-   - 20GB+ disk space
-   - Root access
-
-2. **IP Addresses:**
-   - Primary IP assigned to your VPS
-   - Any additional IPs you want to use for multi-domain sending
-
-3. **DNS Records (set these up BEFORE installing):**
-   - A record: `@` → Your server IP
-   - A record: `mail` → Your server IP
-   - MX record: `@` → `mail.yourdomain.com` (priority 10)
-   - SPF record: `v=spf1 +a +mx +ip4:YOUR_IP ~all`
-
-4. **Ports Open:**
-   - 25, 465, 587 (SMTP)
-   - 80, 443 (Web)
-   - 110, 143, 993, 995 (POP3/IMAP)
+**Quick Summary:**
+- Ubuntu 20.04/22.04 VPS with 4GB+ RAM
+- Domain with DNS records (A, MX, SPF, DMARC)
+- Ports 25, 465, 587, 80, 443, 110, 143, 993, 995 open
+- Primary IP assigned to VPS (additional IPs optional for multi-domain)
 
 ---
 
@@ -257,7 +243,12 @@ sudo bash bm.sh multi_ip
 
 **SPF Record Example (include ALL your IPs):**
 ```
-v=spf1 +a +mx +ip4:85.121.241.162 +ip4:85.121.241.250 +ip4:85.121.241.251 ~all
+v=spf1 +a +mx +ip4:YOUR_PRIMARY_IP +ip4:YOUR_SECONDARY_IP_1 +ip4:YOUR_SECONDARY_IP_2 ~all
+```
+
+**Example with multiple IPs:**
+```
+v=spf1 +a +mx +ip4:203.0.113.10 +ip4:203.0.113.11 +ip4:203.0.113.12 ~all
 ```
 
 ---
@@ -303,6 +294,15 @@ sudo tail -f /opt/billionmail/logs/postfix/mail.log
 | MoeScale-V4.9.0 | ⚠️ Old | Has bugs (database, network, SPF) |
 
 **Always use V5.0.0 or newer for fresh installs.**
+
+### What's in V5.0.0?
+- ✅ One-command install script
+- ✅ Fixed multi-IP configuration
+- ✅ Fixed database connection issues
+- ✅ Fixed SPF/Email delivery problems
+- ✅ No hardcoded credentials (security)
+- ✅ Complete setup checklist
+- ✅ Cloudflare DNS sync script
 
 ---
 
