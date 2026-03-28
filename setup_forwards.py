@@ -19,7 +19,7 @@ API_TOKEN = "YOUR_API_TOKEN_HERE"
 BASE_URL = "https://YOUR_DOMAIN"
 
 # Destination mailbox where all emails will be forwarded
-DESTINATION = "test@affiliategrowth.shop"
+DESTINATION = "destination@yourdomain.com"
 
 # ============================================
 # MAILBOXES TO FORWARD (50 mailboxes)

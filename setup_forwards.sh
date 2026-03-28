@@ -5,9 +5,9 @@
 # CONFIGURATION - FILL THESE IN
 # ============================================
 
-API_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2NvdW50SWQiOjEsInVzZXJuYW1lIjoibzhhT1RUY3oiLCJyb2xlcyI6WyJhZG1pbiJdLCJhcGlUb2tlbiI6dHJ1ZSwiaXNzIjoiYmlsbGlvbi1tYWlsIiwic3ViIjoiYXBpX3Rva2VuIiwibmJmIjoxNzcyNzgxMDM1LCJpYXQiOjE3NzI3ODEwMzUsImp0aSI6InhhNHRycDBvMDAwZGd2aWZnbjA5MWdzMTAwaGQ5aTVkeGE0dHJwMG8wMDBkZ3ZpZmduMDllMW8yMDAybm1veGYifQ.C11T-ttoEPvGQTXk8L4PhYOHAsXDTu-rTgX7_viHsqg"
-BASE_URL="http://85.121.241.162"
-DESTINATION="test@affiliategrowth.shop"
+API_TOKEN="${API_TOKEN:-}"
+BASE_URL="${BASE_URL:-http://127.0.0.1}"
+DESTINATION="${DESTINATION:-}"
 
 # ============================================
 # MAILBOXES LIST
