@@ -40,6 +40,43 @@ git checkout MoeScale-V5.0.0
 
 ---
 
+## ✅ Setup Checklist
+
+Before installing, complete these steps:
+
+### 1. Server Requirements
+- [ ] Ubuntu 20.04 or 22.04 VPS
+- [ ] 4GB+ RAM, 20GB+ disk space
+- [ ] Root access
+- [ ] Ports open: 25, 465, 587, 80, 443, 110, 143, 993, 995
+
+### 2. Domain & DNS Setup
+- [ ] Register your domain (e.g., b2bscale.xyz)
+- [ ] Point domain to your VPS IP:
+  - A record: `@` → Your VPS IP
+  - A record: `mail` → Your VPS IP
+  - MX record: `@` → `mail.yourdomain.com` (priority 10)
+  - SPF: `v=spf1 +a +mx +ip4:YOUR_IP ~all`
+  - DMARC: `v=DMARC1;p=quarantine;rua=mailto:dmarc@yourdomain.com`
+
+### 3. IP Configuration
+- [ ] Primary IP assigned to VPS
+- [ ] Additional IPs added to network interface (if using multi-IP)
+
+### 4. Credentials (for later)
+- [ ] Prepare admin password for BillionMail
+- [ ] (Optional) Get Cloudflare API token for DNS sync
+- [ ] (Optional) Get SMTP relay credentials (SendGrid/AWS SES) for Gmail delivery
+
+### 5. Install
+- [ ] Run one-command install
+- [ ] Complete web UI setup
+- [ ] Generate DKIM keys
+- [ ] Add DKIM DNS records
+- [ ] Test email delivery
+
+---
+
 ## ✨ What's New in V5.0.0
 
 ### Critical Fixes Applied:
