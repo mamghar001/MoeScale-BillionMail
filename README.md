@@ -49,6 +49,14 @@ git checkout MoeScale-V5.0.0
 4. **SPF Records** - Disabled broken relayhost_maps causing failures
 5. **External Delivery** - Emails now deliver to mail-tester.com and external providers
 
+### 🔒 Security Improvement:
+**All credentials removed from code!** No hardcoded API tokens, passwords, or sensitive data. All configuration is now done via:
+- Environment variables (`.env` file)
+- User input during installation
+- Generated at runtime
+
+**This makes the repository safe to share publicly.**
+
 ---
 
 ## 📋 Prerequisites
@@ -108,6 +116,56 @@ The script will guide you through:
    ```bash
    echo "Test email" | sendmail -v your-email@gmail.com
    ```
+
+---
+
+## 🔐 Configuration & Credentials
+
+### Environment Variables
+
+All sensitive configuration is done through environment variables. Create a `.env` file:
+
+```bash
+cd /opt/billionmail
+cat > .env << 'EOF'
+# Database
+DBUSER=billionmail
+DBNAME=billionmail
+DBPASS=your_secure_password_here
+
+# Redis
+REDISPASS=your_redis_password_here
+
+# Main Domain
+BILLIONMAIL_HOSTNAME=your-domain.com
+
+# Admin Credentials
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your_admin_password
+SafePath=admin888
+
+# Network
+IPV4_NETWORK=172.66.1
+EOF
+```
+
+### API Tokens (for helper scripts)
+
+If using helper scripts like `dns_auto_sync.py` or `setup_forwards.sh`, set credentials via environment variables:
+
+```bash
+# Export before running scripts
+export BILLIONMAIL_TOKEN="your_billionmail_api_token"
+export NAMECHEAP_API_USER="your_username"
+export NAMECHEAP_API_KEY="your_api_key"
+export CLOUDFLARE_API_TOKEN="your_cloudflare_token"
+export VPS_IP="your_server_ip"
+
+# Then run the script
+python3 dns_auto_sync.py
+```
+
+**⚠️ Never commit credentials to git!** The `.env` file is in `.gitignore` by default.
 
 ---
 
