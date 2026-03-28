@@ -116,11 +116,19 @@ See the [✅ Setup Checklist](#-setup-checklist) above for complete requirements
 sudo curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/moescale-fixed/one-command-install.sh | sudo bash
 ```
 
-The script will guide you through:
-- Domain setup
-- IP configuration
-- Admin credentials
-- Optional SMTP relay (for reliable Gmail/Hotmail delivery)
+**What the script does:**
+- ✅ Checks system requirements
+- ✅ Installs Docker & dependencies
+- ✅ **Generates secure random passwords** (database, Redis)
+- ✅ Asks for your domain and admin credentials
+- ✅ Configures IP addresses
+- ✅ Sets up everything automatically
+
+**You only need to provide:**
+- Your domain name
+- Admin username/password
+- Your server IP(s)
+- (Optional) SMTP relay credentials for Gmail delivery
 
 ### After Installation:
 
