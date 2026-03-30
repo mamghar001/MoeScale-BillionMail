@@ -45,7 +45,7 @@ DOCKER_BRIDGE_GW="172.66.2.1"       # Will be auto-detected
 
 # List of all Noez IPs to auto-configure on boot (space-separated)
 # Add all your Noez IPs here for automatic setup
-ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.2"
+ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.2 5.230.168.10"
 
 # Cloudflare DNS Configuration (optional - for automatic DNS setup)
 # Get your API token from Cloudflare dashboard: https://dash.cloudflare.com/profile/api-tokens
