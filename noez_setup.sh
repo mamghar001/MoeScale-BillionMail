@@ -8,7 +8,7 @@
 #   sudo bash noez_setup.sh add IP DOMAIN # Add new IP/domain
 #   sudo bash noez_setup.sh status       # Check status
 #
-# Version: 4.0 - Now with automatic systemd service setup!
+# Version: 5.0 - Now with Cloudflare DNS support! - Now with automatic systemd service setup!
 
 set -e
 
@@ -45,7 +45,19 @@ DOCKER_BRIDGE_GW="172.66.2.1"       # Will be auto-detected
 
 # List of all Noez IPs to auto-configure on boot (space-separated)
 # Add all your Noez IPs here for automatic setup
-ALL_NOEZ_IPS="5.230.168.0 5.230.168.1"
+ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.2"
+
+# Cloudflare DNS Configuration (optional - for automatic DNS setup)
+# Get your API token from Cloudflare dashboard: https://dash.cloudflare.com/profile/api-tokens
+# Token needs permissions: Zone:Read, DNS:Edit
+CF_API_TOKEN=""  # Your Cloudflare API Token
+CF_ZONE_ID=""    # Your Cloudflare Zone ID (found in domain overview)
+CF_EMAIL=""      # Your Cloudflare email (only needed for Global API Key)
+
+# DNS Records to create (will be created automatically if CF_API_TOKEN is set)
+# A record: mail.DOMAIN -> HOST_IP
+# SPF record: v=spf1 ip4:NOEZ_IP ~all
+# DMARC record: _dmarc.DOINA -> v=DMARC1; p=quarantine; rua=mailto:dmarc@DOMAIN
 
 # =============================================================================
 # END CONFIGURATION
@@ -323,6 +335,90 @@ add_domain_to_billionmail() {
     
     # Also add to bm_multi_ip_domain for UI display
     add_to_multi_ip_domain "$DOMAIN_TO_ADD"
+    
+    # Setup Cloudflare DNS
+    setup_cloudflare_dns "$DOMAIN_TO_ADD"
+}
+
+# Setup Cloudflare DNS records
+setup_cloudflare_dns() {
+    local DOMAIN_TO_SETUP="$1"
+    
+    # Skip if Cloudflare API token not configured
+    if [ -z "$CF_API_TOKEN" ]; then
+        print_info "Cloudflare API token not configured, skipping DNS setup"
+        print_info "To enable automatic DNS, set CF_API_TOKEN and CF_ZONE_ID in script"
+        return 0
+    fi
+    
+    print_section "Setting Up Cloudflare DNS for $DOMAIN_TO_SETUP"
+    
+    # If zone ID not set, try to find it
+    if [ -z "$CF_ZONE_ID" ]; then
+        print_info "Zone ID not configured, trying to find it..."
+        CF_ZONE_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN_TO_SETUP" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H "Content-Type: application/json" | grep -oP '"id":"\K[^"]+' | head -1)
+        
+        if [ -n "$CF_ZONE_ID" ]; then
+            print_status "Found Zone ID: $CF_ZONE_ID"
+        else
+            print_error "Could not find Zone ID for $DOMAIN_TO_SETUP"
+            print_info "Please set CF_ZONE_ID manually in the script"
+            return 1
+        fi
+    fi
+    
+    # 1. Create A record for mail.DOMAIN -> HOST_IP
+    print_info "Creating A record: mail.$DOMAIN_TO_SETUP -> $HOST_IP"
+    local a_record_response=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"type\":\"A\",\"name\":\"mail.$DOMAIN_TO_SETUP\",\"content\":\"$HOST_IP\",\"ttl\":120,\"proxied\":false}" 2>/dev/null)
+    
+    if echo "$a_record_response" | grep -q '"success":true'; then
+        print_status "✓ A record created: mail.$DOMAIN_TO_SETUP -> $HOST_IP"
+    else
+        print_warning "A record creation failed or already exists"
+        echo "$a_record_response" | grep -oP '"message":"[^"]+' | head -1
+    fi
+    
+    # 2. Create SPF record
+    print_info "Creating SPF TXT record..."
+    local spf_content="v=spf1 ip4:$NOEZ_IP ~all"
+    local spf_response=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"type\":\"TXT\",\"name\":\"$DOMAIN_TO_SETUP\",\"content\":\"$spf_content\",\"ttl\":120}" 2>/dev/null)
+    
+    if echo "$spf_response" | grep -q '"success":true'; then
+        print_status "✓ SPF record created: $spf_content"
+    else
+        print_warning "SPF record creation failed or already exists"
+    fi
+    
+    # 3. Create DMARC record
+    print_info "Creating DMARC TXT record..."
+    local dmarc_content="v=DMARC1; p=quarantine; rua=mailto:dmarc@$DOMAIN_TO_SETUP"
+    local dmarc_response=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"type\":\"TXT\",\"name\":\"_dmarc.$DOMAIN_TO_SETUP\",\"content\":\"$dmarc_content\",\"ttl\":120}" 2>/dev/null)
+    
+    if echo "$dmarc_response" | grep -q '"success":true'; then
+        print_status "✓ DMARC record created"
+    else
+        print_warning "DMARC record creation failed or already exists"
+    fi
+    
+    # 4. Create DKIM selector (placeholder - will need actual DKIM key)
+    print_info "DKIM setup:"
+    print_info "  You'll need to add DKIM records manually after setting up DKIM in rspamd"
+    print_info "  Selector: dkim"
+    print_info "  Record name: dkim._domainkey.$DOMAIN_TO_SETUP"
+    
+    print_status "Cloudflare DNS setup complete!"
+    print_info "DNS changes may take a few minutes to propagate"
 }
 
 # Add domain to bm_multi_ip_domain (for UI display of Dedicated IP)
