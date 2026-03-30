@@ -8,7 +8,7 @@
 #   sudo bash noez_setup.sh add IP DOMAIN # Add new IP/domain
 #   sudo bash noez_setup.sh status       # Check status
 #
-# Version: 3.0 - Now with API support!
+# Version: 4.0 - Now with automatic systemd service setup!
 
 set -e
 
@@ -42,6 +42,10 @@ BM_API_TOKEN=""  # Your API token
 CONTAINER_NAME="billionmail-postfix-billionmail-1"
 CONTAINER_NET_NS_IP="172.66.2.100"  # Will be auto-detected
 DOCKER_BRIDGE_GW="172.66.2.1"       # Will be auto-detected
+
+# List of all Noez IPs to auto-configure on boot (space-separated)
+# Add all your Noez IPs here for automatic setup
+ALL_NOEZ_IPS="5.230.168.0 5.230.168.1"
 
 # =============================================================================
 # END CONFIGURATION
@@ -78,6 +82,72 @@ cd "$SCRIPT_DIR"
 
 # Load .env for DB credentials
 source .env 2>/dev/null || true
+
+# Setup systemd service for auto IP configuration on boot
+setup_systemd_service() {
+    print_section "Setting Up Auto-Start Service"
+    
+    # Create the IP setup script
+    cat > /opt/billionmail/setup_noez_ips.sh << EOFSCRIPT
+#!/bin/bash
+# Auto-setup Noez IPs when Postfix container starts
+# This script runs on boot to re-add IPs to container
+
+CONTAINER_NAME="billionmail-postfix-billionmail-1"
+ALL_IPS="$ALL_NOEZ_IPS"
+
+# Wait for container to be running
+for i in {1..30}; do
+    if [ "\$(docker inspect -f '{{.State.Status}}' \$CONTAINER_NAME 2>/dev/null)" == "running" ]; then
+        break
+    fi
+    sleep 1
+done
+
+# Get container PID
+CONTAINER_PID=\$(docker inspect -f '{{.State.Pid}}' \$CONTAINER_NAME 2>/dev/null)
+if [ -z "\$CONTAINER_PID" ]; then
+    echo "Container not found"
+    exit 1
+fi
+
+# Add all Noez IPs to container
+for IP in \$ALL_IPS; do
+    nsenter -t \$CONTAINER_PID -n ip addr add \$IP/32 dev lo 2>/dev/null || true
+done
+
+echo "Noez IPs added to container: \$ALL_IPS"
+EOFSCRIPT
+    chmod +x /opt/billionmail/setup_noez_ips.sh
+    print_status "Created IP setup script"
+    
+    # Create systemd service file
+    cat > /etc/systemd/system/noez-ips.service << EOFSERVICE
+[Unit]
+Description=Noez IPs Setup for BillionMail
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/billionmail/setup_noez_ips.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOFSERVICE
+    
+    # Reload systemd and enable service
+    systemctl daemon-reload
+    systemctl enable noez-ips.service
+    
+    # Start the service now
+    systemctl start noez-ips.service 2>/dev/null || true
+    
+    print_status "Systemd service enabled for auto-start on boot"
+    print_info "Service: noez-ips.service"
+    print_info "Script: /opt/billionmail/setup_noez_ips.sh"
+}
 
 # Auto-detect Docker network settings
 detect_docker_network() {
@@ -660,6 +730,15 @@ show_status() {
     echo -e "${CYAN}Transport Mapping:${NC}"
     docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -c \
         "SELECT domain, smtp_name FROM bm_domain_smtp_transport WHERE domain='@$DOMAIN';" 2>/dev/null | sed 's/^/  /' || echo "  (database error)"
+    
+    echo ""
+    echo -e "${CYAN}Auto-Start Service:${NC}"
+    if systemctl is-enabled noez-ips.service &>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} noez-ips.service enabled"
+        systemctl status noez-ips.service --no-pager 2>/dev/null | grep "Active:" | sed 's/^/  /'
+    else
+        echo -e "  ${RED}✗${NC} noez-ips.service not enabled"
+    fi
 }
 
 # Main function
@@ -672,6 +751,9 @@ main() {
             validate_config
             detect_docker_network
             
+            # Setup systemd service for auto-start
+            setup_systemd_service
+            
             # Add domain to BillionMail first
             add_domain_to_billionmail "$DOMAIN"
             
@@ -683,6 +765,8 @@ main() {
             
             print_section "✅ Setup Complete!"
             print_info "Your domain $DOMAIN is now configured to send from $NOEZ_IP"
+            print_info ""
+            print_info "Auto-start service is enabled - IPs will be auto-added on boot!"
             print_info "Run: $0 test  - to send a test email"
             print_info "Run: $0 status - to check status"
             print_info ""
@@ -719,17 +803,21 @@ main() {
             echo "  help        Show this help"
             echo ""
             echo "Examples:"
-            echo "  sudo $0                    # Run setup"
+            echo "  sudo $0                    # Full setup with auto-start"
             echo "  sudo $0 test               # Send test email"
             echo "  sudo $0 add 5.230.168.1 newdomain.com"
             echo ""
-            echo "API Configuration (optional):"
-            echo "  Edit BM_API_URL and BM_API_TOKEN in the script to use API"
-            echo "  instead of direct database access for domain creation."
+            echo "Configuration:"
+            echo "  Edit the CONFIGURATION section at the top of this script"
+            echo "  Or run interactively to be prompted for values"
+            echo ""
+            echo "Auto-Start:"
+            echo "  This script automatically creates and enables a systemd service"
+            echo "  that will add Noez IPs to the container on every boot."
             ;;
         *)
             print_error "Unknown command: $COMMAND"
-            echo "Run '$0 help' for usage"
+            echo "Run '\$0 help' for usage"
             exit 1
             ;;
     esac
