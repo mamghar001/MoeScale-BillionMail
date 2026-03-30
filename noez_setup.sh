@@ -687,6 +687,17 @@ setup_host_routing() {
     iptables -C FORWARD -d $NOEZ_IP -j ACCEPT 2>/dev/null || iptables -I FORWARD -d $NOEZ_IP -j ACCEPT
     print_status "Added forwarding rules"
     
+    # CRITICAL FIX: Ensure host routes Noez IP traffic to container, not locally
+    print_info "Configuring host routes for $NOEZ_IP..."
+    # Delete local route if exists (prevents host from processing replies locally)
+    ip route del table local $NOEZ_IP dev gre1 2>/dev/null || true
+    # Add route via bridge to container
+    DOCKER_BRIDGE=$(ip route | grep "172.66.2.0/24" | awk '{print $3}')
+    if [ -n "$DOCKER_BRIDGE" ]; then
+        ip route replace $NOEZ_IP dev $DOCKER_BRIDGE 2>/dev/null || ip route add $NOEZ_IP dev $DOCKER_BRIDGE 2>/dev/null || true
+        print_status "Host will forward $NOEZ_IP traffic to container"
+    fi
+    
     # Flush route cache
     ip route flush cache
     print_status "Route cache flushed"
