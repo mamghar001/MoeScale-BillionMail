@@ -1,0 +1,9 @@
+
+<test-utp2q8oiv@srv1.mail-tester.com>: mail transport unavailable
+recipient=test-utp2q8oiv@srv1.mail-tester.com
+offset=979
+dsn_orig_rcpt=rfc822;test-utp2q8oiv@srv1.mail-tester.com
+status=4.3.0
+action=delayed
+reason=mail transport unavailable
+

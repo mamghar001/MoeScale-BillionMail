@@ -473,11 +473,17 @@ EOF
         print_status "Added domain transport mapping: @$DOMAIN -> $TRANSPORT_NAME"
     fi
     
-    # Reload Postfix
-    print_info "Reloading Postfix..."
-    docker exec $CONTAINER_NAME postfix reload 2>/dev/null || {
-        print_warning "Postfix reload failed, may need restart"
+    # Restart Postfix (reload doesn't pick up new transports)
+    print_info "Restarting Postfix to load new transport..."
+    docker restart $CONTAINER_NAME 2>/dev/null && sleep 3 || {
+        print_warning "Postfix restart failed"
     }
+    
+    # Re-add IPs to container after restart
+    print_info "Re-adding IPs to container after restart..."
+    CONTAINER_PID=$(docker inspect -f '{{.State.Pid}}' $CONTAINER_NAME 2>/dev/null)
+    nsenter -t $CONTAINER_PID -n ip addr add $NOEZ_IP/32 dev lo 2>/dev/null || true
+    
     print_status "Postfix configured!"
 }
 
