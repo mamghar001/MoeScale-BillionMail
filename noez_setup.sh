@@ -838,6 +838,32 @@ add_new_ip() {
         exit 1
     fi
     
+    # Check/create GRE tunnel first
+    print_section "Setting Up GRE Tunnel for $NEW_IP"
+    
+    # Check if GRE tunnel exists
+    if ! ip link show gre1 &>/dev/null; then
+        print_info "GRE tunnel not found, creating..."
+        setup_gre_tunnel
+    else
+        print_status "GRE tunnel exists"
+        
+        # Add the new IP to GRE tunnel if not already there
+        if ! ip addr show gre1 | grep -q "$NEW_IP"; then
+            print_info "Adding $NEW_IP to GRE tunnel..."
+            ip addr add $NEW_IP/32 dev gre1
+            print_status "Added $NEW_IP to GRE tunnel"
+        else
+            print_status "$NEW_IP already on GRE tunnel"
+        fi
+        
+        # Add routing policy for this IP
+        print_info "Adding routing policy for $NEW_IP..."
+        ip rule add from $NEW_IP table 20 prio 200 2>/dev/null || print_info "Routing policy may already exist"
+        ip route add default via $GRE_REMOTE dev gre1 table 20 2>/dev/null || true
+        print_status "Routing policy configured"
+    fi
+    
     # Add domain to BillionMail first
     add_domain_to_billionmail "$NEW_DOMAIN"
     
