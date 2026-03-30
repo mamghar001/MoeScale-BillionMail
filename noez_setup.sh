@@ -701,14 +701,21 @@ setup_postfix() {
     # Check if transport already exists
     if grep -q "^$TRANSPORT_NAME" conf/postfix/master.cf; then
         print_status "Transport $TRANSPORT_NAME already exists"
+        # Check if it has smtp_bind_address configured
+        if ! grep -A1 "^$TRANSPORT_NAME" conf/postfix/master.cf | grep -q "smtp_bind_address"; then
+            print_info "Adding smtp_bind_address to existing transport..."
+            sed -i "/^$TRANSPORT_NAME unix/a\\  -o smtp_bind_address=$NOEZ_IP" conf/postfix/master.cf
+            print_status "Updated transport with bind address $NOEZ_IP"
+        fi
     else
         print_info "Adding transport to master.cf..."
         cat >> conf/postfix/master.cf << EOF
 
 # Noez IP for $DOMAIN
 $TRANSPORT_NAME unix  -       -       n       -       -       smtp
+  -o smtp_bind_address=$NOEZ_IP
 EOF
-        print_status "Added transport $TRANSPORT_NAME"
+        print_status "Added transport $TRANSPORT_NAME with bind address $NOEZ_IP"
     fi
     
     # Add domain mapping in database
