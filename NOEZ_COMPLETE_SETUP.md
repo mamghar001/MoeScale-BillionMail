@@ -353,3 +353,73 @@ sudo bash /opt/billionmail/noez_setup.sh status
 
 **Version:** 2.0  
 **Working:** ✅ Yes - Successfully tested sending from 5.230.168.0, 5.230.168.1, 5.230.168.4 via GRE tunnel
+
+---
+
+## 🚀 Interactive Mode
+
+The script now **prompts you for values** if they're not set!
+
+### If Values Are Not Set:
+
+```bash
+$ sudo bash noez_setup.sh
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Noez GRE Tunnel Setup for BillionMail
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Configuration
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[!] NOEZ_IP not configured
+Enter your Noez IP (e.g., 5.230.168.0): 5.230.168.0
+
+[!] HOST_IP not configured
+Enter your VPS IP [detected: 85.121.241.162]: 
+
+[!] NOEZ_GRE_REMOTE not configured
+Enter Noez GRE remote endpoint (from Noez panel): 5.230.205.35
+
+[!] DOMAIN not configured
+Enter domain to send from: yourdomain.com
+
+Configuration:
+  Noez IP: 5.230.168.0
+  Host IP: 85.121.241.162
+  GRE Endpoint: 5.230.205.35
+  Domain: yourdomain.com
+
+Is this correct? (y/n) y
+
+[✓] Configuration confirmed!
+```
+
+### Two Ways to Configure:
+
+**Option 1: Interactive (Easiest)**
+Just run the script and answer the prompts:
+```bash
+sudo bash noez_setup.sh
+```
+
+**Option 2: Edit Script (For Automation)**
+Edit the CONFIGURATION section at the top:
+```bash
+nano noez_setup.sh
+# Set these values:
+NOEZ_IP="5.230.168.0"
+HOST_IP="85.121.241.162"
+NOEZ_GRE_REMOTE="5.230.205.35"
+DOMAIN="yourdomain.com"
+```
+
+### Auto-Detection
+
+The script will try to **auto-detect your VPS IP**:
+```
+Enter your VPS IP [detected: 85.121.241.162]:
+```
+
+Just press Enter to use the detected IP, or type a different one.
+

@@ -97,45 +97,95 @@ detect_docker_network() {
 
 # Validate configuration
 validate_config() {
-    print_section "Validating Configuration"
+    print_section "Configuration"
     
     local errors=0
+    local interactive=0
     
+    # Check if running interactively
+    if [ -t 0 ]; then
+        interactive=1
+    fi
+    
+    # NOEZ_IP
     if [ "$NOEZ_IP" == "YOUR_NOEZ_IP_HERE" ] || [ -z "$NOEZ_IP" ]; then
-        print_error "NOEZ_IP not configured! Edit the script and set your Noez IP."
-        ((errors++))
-    else
-        print_status "Noez IP: $NOEZ_IP"
+        if [ $interactive -eq 1 ]; then
+            print_warning "NOEZ_IP not configured"
+            read -p "Enter your Noez IP (e.g., 5.230.168.0): " NOEZ_IP
+        else
+            print_error "NOEZ_IP not configured! Run interactively or edit the script."
+            ((errors++))
+        fi
     fi
     
+    # HOST_IP
     if [ "$HOST_IP" == "YOUR_VPS_IP_HERE" ] || [ -z "$HOST_IP" ]; then
-        print_error "HOST_IP not configured! Edit the script and set your VPS IP."
-        ((errors++))
-    else
-        print_status "Host IP: $HOST_IP"
+        if [ $interactive -eq 1 ]; then
+            print_warning "HOST_IP not configured"
+            # Try to auto-detect
+            DETECTED_IP=$(ip route get 8.8.8.8 2>/dev/null | head -1 | grep -oP 'src \K[\d.]+')
+            if [ -n "$DETECTED_IP" ]; then
+                read -p "Enter your VPS IP [detected: $DETECTED_IP]: " HOST_IP
+                HOST_IP=${HOST_IP:-$DETECTED_IP}
+            else
+                read -p "Enter your VPS IP: " HOST_IP
+            fi
+        else
+            print_error "HOST_IP not configured! Run interactively or edit the script."
+            ((errors++))
+        fi
     fi
     
-    if [ -z "$NOEZ_GRE_REMOTE" ]; then
-        print_error "NOEZ_GRE_REMOTE not configured!"
-        ((errors++))
-    else
-        print_status "Noez GRE endpoint: $NOEZ_GRE_REMOTE"
+    # NOEZ_GRE_REMOTE
+    if [ -z "$NOEZ_GRE_REMOTE" ] || [ "$NOEZ_GRE_REMOTE" == "NOEZ_ENDPOINT" ]; then
+        if [ $interactive -eq 1 ]; then
+            print_warning "NOEZ_GRE_REMOTE not configured"
+            read -p "Enter Noez GRE remote endpoint (from Noez panel): " NOEZ_GRE_REMOTE
+        else
+            print_error "NOEZ_GRE_REMOTE not configured! Run interactively or edit the script."
+            ((errors++))
+        fi
     fi
     
-    if [ -z "$DOMAIN" ]; then
-        print_error "DOMAIN not configured!"
-        ((errors++))
-    else
-        print_status "Domain: $DOMAIN"
+    # DOMAIN
+    if [ -z "$DOMAIN" ] || [ "$DOMAIN" == "yourdomain.com" ]; then
+        if [ $interactive -eq 1 ]; then
+            print_warning "DOMAIN not configured"
+            read -p "Enter domain to send from: " DOMAIN
+        else
+            print_error "DOMAIN not configured! Run interactively or edit the script."
+            ((errors++))
+        fi
     fi
     
     if [ $errors -gt 0 ]; then
         echo ""
-        print_error "Configuration incomplete! Please edit $0 and set the required values."
+        print_error "Configuration incomplete!"
+        print_info "Either:"
+        print_info "  1. Run this script interactively (with a TTY)"
+        print_info "  2. Edit $0 and set the values in the CONFIGURATION section"
         exit 1
     fi
     
-    print_status "Configuration valid!"
+    # Show final configuration
+    echo ""
+    print_status "Configuration:"
+    echo "  Noez IP: $NOEZ_IP"
+    echo "  Host IP: $HOST_IP"
+    echo "  GRE Endpoint: $NOEZ_GRE_REMOTE"
+    echo "  Domain: $DOMAIN"
+    echo ""
+    
+    if [ $interactive -eq 1 ]; then
+        read -p "Is this correct? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_error "Configuration cancelled"
+            exit 1
+        fi
+    fi
+    
+    print_status "Configuration confirmed!"
 }
 
 # Setup GRE tunnel
