@@ -8,56 +8,68 @@
 #   sudo bash noez_setup.sh add IP DOMAIN # Add new IP/domain
 #   sudo bash noez_setup.sh status       # Check status
 #
-# Version: 5.0 - Now with Cloudflare DNS support! - Now with automatic systemd service setup!
+# Version: 6.0 - Now with .env file support!
+#
+# Configuration:
+#   1. Copy noez_setup.env.example to noez_setup.env
+#   2. Fill in your actual values in noez_setup.env
+#   3. Run: sudo bash noez_setup.sh
+#   OR run interactively without config file
 
 set -e
 
 # =============================================================================
-# CONFIGURATION - EDIT THESE VALUES FOR YOUR SETUP
+# LOAD CONFIGURATION FROM ENV FILE (IF EXISTS)
+# =============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/noez_setup.env"
+
+if [ -f "$ENV_FILE" ]; then
+    echo "Loading configuration from $ENV_FILE..."
+    # shellcheck source=/dev/null
+    source "$ENV_FILE"
+fi
+
+# =============================================================================
+# DEFAULT CONFIGURATION (used if not set in env file or for interactive mode)
 # =============================================================================
 
 # REQUIRED: Your Noez IP (the IP you want to send emails from)
-NOEZ_IP="5.230.168.0"
+NOEZ_IP="${NOEZ_IP:-}"
 
 # REQUIRED: Your VPS public IP (the IP Noez created the GRE tunnel to)
-HOST_IP="85.121.241.162"
+HOST_IP="${HOST_IP:-}"
 
 # REQUIRED: Noez GRE tunnel remote endpoint (provided by Noez)
-NOEZ_GRE_REMOTE="5.230.205.35"
+NOEZ_GRE_REMOTE="${NOEZ_GRE_REMOTE:-}"
 
 # REQUIRED: Domain to use for sending
-DOMAIN="moescaleb2b.site"
+DOMAIN="${DOMAIN:-}"
 
 # GRE tunnel internal IPs (usually provided by Noez)
-GRE_LOCAL="192.168.31.2"     # Your side
-GRE_REMOTE="192.168.31.1"    # Noez side
-GRE_SUBNET="192.168.31.0/30" # GRE subnet
+GRE_LOCAL="${GRE_LOCAL:-192.168.31.2}"     # Your side
+GRE_REMOTE="${GRE_REMOTE:-192.168.31.1}"    # Noez side
+GRE_SUBNET="${GRE_SUBNET:-192.168.31.0/30}" # GRE subnet
 
 # BillionMail API Settings (optional - for API-based domain creation)
-# Leave empty to use database directly (faster, works without API)
-BM_API_URL=""  # e.g., "https://mail.yourdomain.com"
-BM_API_TOKEN=""  # Your API token
+BM_API_URL="${BM_API_URL:-}"
+BM_API_TOKEN="${BM_API_TOKEN:-}"
 
 # Docker settings (auto-detected if possible)
-CONTAINER_NAME="billionmail-postfix-billionmail-1"
-CONTAINER_NET_NS_IP="172.66.2.100"  # Will be auto-detected
-DOCKER_BRIDGE_GW="172.66.2.1"       # Will be auto-detected
+CONTAINER_NAME="${CONTAINER_NAME:-billionmail-postfix-billionmail-1}"
+CONTAINER_NET_NS_IP="${CONTAINER_NET_NS_IP:-}"
+DOCKER_BRIDGE_GW="${DOCKER_BRIDGE_GW:-}"
+DOCKER_NETWORK="${DOCKER_NETWORK:-billionmail_network}"
+DOCKER_SUBNET="${DOCKER_SUBNET:-172.66.2.0/24}"
 
 # List of all Noez IPs to auto-configure on boot (space-separated)
-# Add all your Noez IPs here for automatic setup
-ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.2 5.230.168.10"
+ALL_NOEZ_IPS="${ALL_NOEZ_IPS:-}"
 
 # Cloudflare DNS Configuration (optional - for automatic DNS setup)
-# Get your API token from Cloudflare dashboard: https://dash.cloudflare.com/profile/api-tokens
-# Token needs permissions: Zone:Read, DNS:Edit
-CF_API_TOKEN="cfut_FmcXrhTPhCDH4P4ZI1U1JZlxTs3SGmbmzOMSnmnaa141022d"  # Your Cloudflare API Token
-CF_ZONE_ID=""    # Your Cloudflare Zone ID (found in domain overview)
-CF_EMAIL=""      # Your Cloudflare email (only needed for Global API Key)
-
-# DNS Records to create (will be created automatically if CF_API_TOKEN is set)
-# A record: mail.DOMAIN -> HOST_IP
-# SPF record: v=spf1 ip4:NOEZ_IP ~all
-# DMARC record: _dmarc.DOINA -> v=DMARC1; p=quarantine; rua=mailto:dmarc@DOMAIN
+CF_API_TOKEN="${CF_API_TOKEN:-}"
+CF_ZONE_ID="${CF_ZONE_ID:-}"
+CF_EMAIL="${CF_EMAIL:-}"
 
 # =============================================================================
 # END CONFIGURATION
@@ -340,6 +352,39 @@ add_domain_to_billionmail() {
     setup_cloudflare_dns "$DOMAIN_TO_ADD"
 }
 
+# Get record ID from Cloudflare API
+# Usage: get_cf_record_id ZONE_ID RECORD_NAME RECORD_TYPE
+get_cf_record_id() {
+    local zone_id="$1"
+    local record_name="$2"
+    local record_type="$3"
+    
+    curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?type=$record_type&name=$record_name" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['result'][0]['id'])" 2>/dev/null
+}
+
+# Delete existing Cloudflare DNS record by name and type
+delete_cf_record() {
+    local zone_id="$1"
+    local record_name="$2"
+    local record_type="$3"
+    
+    # Get all records of this type and name
+    local records=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?type=$record_type&name=$record_name" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json")
+    
+    # Extract and delete all matching record IDs
+    echo "$records" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['id']) for r in d.get('result', [])]" 2>/dev/null | while read record_id; do
+        if [ -n "$record_id" ]; then
+            curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$record_id" \
+                -H "Authorization: Bearer $CF_API_TOKEN" \
+                -H "Content-Type: application/json" > /dev/null 2>&1
+        fi
+    done
+}
+
 # Setup Cloudflare DNS records
 setup_cloudflare_dns() {
     local DOMAIN_TO_SETUP="$1"
@@ -369,21 +414,65 @@ setup_cloudflare_dns() {
         fi
     fi
     
-    # 1. Create A record for mail.DOMAIN -> HOST_IP
-    print_info "Creating A record: mail.$DOMAIN_TO_SETUP -> $HOST_IP"
-    local a_record_response=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
+    # DELETE existing SPF records for domain (cleanup any old records)
+    print_info "Cleaning up old SPF records..."
+    local existing_spf=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?type=TXT&name=$DOMAIN_TO_SETUP" \
         -H "Authorization: Bearer $CF_API_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "{\"type\":\"A\",\"name\":\"mail.$DOMAIN_TO_SETUP\",\"content\":\"$HOST_IP\",\"ttl\":120,\"proxied\":false}" 2>/dev/null)
+        -H "Content-Type: application/json")
     
-    if echo "$a_record_response" | grep -q '"success":true'; then
-        print_status "✓ A record created: mail.$DOMAIN_TO_SETUP -> $HOST_IP"
+    # Delete all SPF records (ones containing 'v=spf1')
+    echo "$existing_spf" | python3 -c "import sys,json,re; d=json.load(sys.stdin); [print(r['id']) for r in d.get('result', []) if 'v=spf1' in r.get('content', '')]" 2>/dev/null | while read record_id; do
+        if [ -n "$record_id" ]; then
+            curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records/$record_id" \
+                -H "Authorization: Bearer $CF_API_TOKEN" \
+                -H "Content-Type: application/json" > /dev/null 2>&1
+            print_status "✓ Deleted old SPF record"
+        fi
+    done
+    
+    # DELETE existing DMARC records
+    print_info "Cleaning up old DMARC records..."
+    local existing_dmarc=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?type=TXT&name=_dmarc.$DOMAIN_TO_SETUP" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json")
+    
+    echo "$existing_dmarc" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['id']) for r in d.get('result', [])]" 2>/dev/null | while read record_id; do
+        if [ -n "$record_id" ]; then
+            curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records/$record_id" \
+                -H "Authorization: Bearer $CF_API_TOKEN" \
+                -H "Content-Type: application/json" > /dev/null 2>&1
+            print_status "✓ Deleted old DMARC record"
+        fi
+    done
+    
+    # 1. Create/Update A record for mail.DOMAIN -> HOST_IP
+    print_info "Setting up A record: mail.$DOMAIN_TO_SETUP -> $HOST_IP"
+    
+    # Check if A record already exists
+    local existing_a_id=$(get_cf_record_id "$CF_ZONE_ID" "mail.$DOMAIN_TO_SETUP" "A")
+    
+    if [ -n "$existing_a_id" ]; then
+        # Update existing record
+        local a_record_response=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records/$existing_a_id" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"type\":\"A\",\"name\":\"mail.$DOMAIN_TO_SETUP\",\"content\":\"$HOST_IP\",\"ttl\":120,\"proxied\":false}" 2>/dev/null)
+        print_status "✓ A record updated: mail.$DOMAIN_TO_SETUP -> $HOST_IP"
     else
-        print_warning "A record creation failed or already exists"
-        echo "$a_record_response" | grep -oP '"message":"[^"]+' | head -1
+        # Create new record
+        local a_record_response=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"type\":\"A\",\"name\":\"mail.$DOMAIN_TO_SETUP\",\"content\":\"$HOST_IP\",\"ttl\":120,\"proxied\":false}" 2>/dev/null)
+        
+        if echo "$a_record_response" | grep -q '"success":true'; then
+            print_status "✓ A record created: mail.$DOMAIN_TO_SETUP -> $HOST_IP"
+        else
+            print_warning "A record creation failed"
+        fi
     fi
     
-    # 2. Create SPF record
+    # 2. Create SPF record (fresh - old ones already deleted)
     print_info "Creating SPF TXT record..."
     local spf_content="v=spf1 ip4:$NOEZ_IP ~all"
     local spf_response=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
@@ -394,10 +483,10 @@ setup_cloudflare_dns() {
     if echo "$spf_response" | grep -q '"success":true'; then
         print_status "✓ SPF record created: $spf_content"
     else
-        print_warning "SPF record creation failed or already exists"
+        print_warning "SPF record creation failed"
     fi
     
-    # 3. Create DMARC record
+    # 3. Create DMARC record (fresh - old ones already deleted)
     print_info "Creating DMARC TXT record..."
     local dmarc_content="v=DMARC1; p=quarantine; rua=mailto:dmarc@$DOMAIN_TO_SETUP"
     local dmarc_response=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
@@ -408,7 +497,7 @@ setup_cloudflare_dns() {
     if echo "$dmarc_response" | grep -q '"success":true'; then
         print_status "✓ DMARC record created"
     else
-        print_warning "DMARC record creation failed or already exists"
+        print_warning "DMARC record creation failed"
     fi
     
     # 4. Create DKIM selector (placeholder - will need actual DKIM key)

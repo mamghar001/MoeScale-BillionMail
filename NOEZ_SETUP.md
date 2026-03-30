@@ -12,6 +12,13 @@
 ## 🚀 ONE COMMAND SETUP
 
 ```bash
+# 1. Copy the example config file
+cp noez_setup.env.example noez_setup.env
+
+# 2. Edit with your values (see Configuration section below)
+nano noez_setup.env
+
+# 3. Run the setup
 sudo bash /opt/billionmail/noez_setup.sh
 ```
 
@@ -25,6 +32,12 @@ That's it! This single command will:
 - Configure Postfix
 - Test connectivity
 
+Or run **interactively** without config file:
+```bash
+sudo bash /opt/billionmail/noez_setup.sh
+# Script will prompt for all required values
+```
+
 ## 📋 Prerequisites
 
 - VPS with public IP and root access
@@ -34,7 +47,16 @@ That's it! This single command will:
 
 ## 🔧 Configuration
 
-Edit `/opt/billionmail/noez_setup.sh` and set:
+### Option 1: Config File (Recommended)
+
+Copy the example file and edit:
+
+```bash
+cp noez_setup.env.example noez_setup.env
+nano noez_setup.env
+```
+
+Fill in your values:
 
 ```bash
 # REQUIRED: Your Noez IP
@@ -53,8 +75,21 @@ DOMAIN="yourdomain.com"
 ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.10"
 
 # Cloudflare API (for automatic DNS)
-CF_API_TOKEN="your-cloudflare-token"  # From https://dash.cloudflare.com/profile/api-tokens
+CF_API_TOKEN="your-cloudflare-token"
 CF_ZONE_ID=""  # Optional - script auto-detects
+```
+
+**⚠️ IMPORTANT:** `noez_setup.env` is in `.gitignore` and will NOT be committed to git. Keep your API tokens safe!
+
+### Option 2: Interactive Mode
+
+If `noez_setup.env` doesn't exist, the script will prompt for values interactively:
+
+```bash
+sudo bash noez_setup.sh
+# ? Enter your Noez IP: 5.230.168.0
+# ? Enter your VPS IP: YOUR_VPS_IP
+# ...etc
 ```
 
 **Get Cloudflare API Token:**
@@ -87,7 +122,7 @@ sudo bash noez_setup.sh add 5.230.168.X newdomain.com
 # - Add to auto-start service
 ```
 
-Then update `ALL_NOEZ_IPS`:
+Then update `noez_setup.env`:
 ```bash
 ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.10 5.230.168.X"
 ```
@@ -114,6 +149,7 @@ ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.10 5.230.168.X"
 - **A record:** mail.DOMAIN → HOST_IP
 - **SPF record:** v=spf1 ip4:NOEZ_IP ~all
 - **DMARC record:** _dmarc.DOMAIN
+- **Cleanup:** Deletes old duplicate records before creating new ones
 
 ### 5. Container Networking
 - Adds Noez IP to container loopback
@@ -186,13 +222,30 @@ sudo bash /opt/billionmail/setup_noez_ips.sh
 
 ## 📝 Files
 
-| File | Purpose |
-|------|---------|
-| `noez_setup.sh` | **MAIN SCRIPT** - Run this |
-| `NOEZ_SETUP.md` | This documentation |
-| `setup_noez_ips.sh` | Auto-created helper for systemd |
+| File | Purpose | In Git? |
+|------|---------|---------|
+| `noez_setup.sh` | **MAIN SCRIPT** - Run this | ✅ Yes |
+| `noez_setup.env.example` | Config template | ✅ Yes |
+| `noez_setup.env` | **YOUR PRIVATE CONFIG** | ❌ No (gitignored) |
+| `NOEZ_SETUP.md` | This documentation | ✅ Yes |
+| `setup_noez_ips.sh` | Auto-created helper for systemd | ❌ No |
+
+### For New VPS Install
+
+```bash
+# 1. Clone/pull repo
+git clone <repo> /opt/billionmail
+cd /opt/billionmail
+
+# 2. Create your private config from template
+cp noez_setup.env.example noez_setup.env
+nano noez_setup.env  # Fill in your values
+
+# 3. Run setup
+sudo bash noez_setup.sh
+```
 
 ---
 
-**Version:** 5.0  
-**Status:** ✅ PRODUCTION READY - Cloudflare DNS auto-integration working
+**Version:** 6.0  
+**Status:** ✅ PRODUCTION READY - Env file support & Cloudflare DNS auto-integration

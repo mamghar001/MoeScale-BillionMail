@@ -1,6 +1,7 @@
 # Sensitive
 .env
 .env.*
+noez_setup.env
 *.pem
 *.key
 
