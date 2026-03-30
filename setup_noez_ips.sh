@@ -3,7 +3,7 @@
 # This script runs on boot to re-add IPs to container
 
 CONTAINER_NAME="billionmail-postfix-billionmail-1"
-ALL_IPS="5.230.168.0 5.230.168.1 5.230.168.2 5.230.168.10"
+ALL_IPS="5.230.168.0 5.230.168.1 5.230.168.2 5.230.168.10 5.230.168.11"
 
 # Wait for container to be running
 for i in {1..30}; do

@@ -155,3 +155,6 @@ smtp_bind_ip_5_230_168_2 unix  -       -       n       -       -       smtp
 
 # Noez IP for aiemailagents.shop
 smtp_bind_ip_5_230_168_10 unix  -       -       n       -       -       smtp
+
+# Noez IP for afiliatemarketing.shop
+smtp_bind_ip_5_230_168_11 unix  -       -       n       -       -       smtp
