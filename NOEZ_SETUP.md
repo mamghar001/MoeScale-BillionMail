@@ -127,6 +127,29 @@ Then update `noez_setup.env`:
 ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.10 5.230.168.X"
 ```
 
+### Multiple Domains per IP
+
+You can have **multiple domains sharing the same IP**:
+
+```bash
+# Domain 1 uses IP 5.230.168.10
+sudo bash noez_setup.sh add 5.230.168.10 aiemailagents.shop
+
+# Domain 2 uses SAME IP 5.230.168.10
+sudo bash noez_setup.sh add 5.230.168.10 affiliatehighticket.shop
+```
+
+**How it works:**
+- Both domains share the same Postfix transport
+- Each domain has its own DNS records (A, SPF, DMARC)
+- Both send from IP `5.230.168.10`
+- SPF record for each domain includes: `ip4:5.230.168.10`
+
+**Benefits:**
+- Efficient IP usage
+- Separate domain reputation
+- Individual DNS management
+
 ## ✅ What the Script Does
 
 ### 1. Auto-Start Service
