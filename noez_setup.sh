@@ -50,7 +50,7 @@ ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.2 5.230.168.10"
 # Cloudflare DNS Configuration (optional - for automatic DNS setup)
 # Get your API token from Cloudflare dashboard: https://dash.cloudflare.com/profile/api-tokens
 # Token needs permissions: Zone:Read, DNS:Edit
-CF_API_TOKEN=""  # Your Cloudflare API Token
+CF_API_TOKEN="cfut_FmcXrhTPhCDH4P4ZI1U1JZlxTs3SGmbmzOMSnmnaa141022d"  # Your Cloudflare API Token
 CF_ZONE_ID=""    # Your Cloudflare Zone ID (found in domain overview)
 CF_EMAIL=""      # Your Cloudflare email (only needed for Global API Key)
 
