@@ -1,0 +1,421 @@
+[
+    {
+        "Id": "139705416b3d4972a18a2580ae653c64d0c68e9246d893ec9237282c8d339ebb",
+        "Created": "2026-03-09T04:32:36.221856509Z",
+        "Path": "/core.sh",
+        "Args": [
+            "/usr/bin/supervisord",
+            "-c",
+            "/etc/supervisor/supervisord.conf"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 636748,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-03-09T04:32:36.644794087Z",
+            "FinishedAt": "0001-01-01T00:00:00Z"
+        },
+        "Image": "sha256:9437a6a042a847fad408b6bf0742537da74feb935e2cc4d5a6e2276e2b2b4991",
+        "ResolvConfPath": "/var/lib/docker/containers/139705416b3d4972a18a2580ae653c64d0c68e9246d893ec9237282c8d339ebb/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/139705416b3d4972a18a2580ae653c64d0c68e9246d893ec9237282c8d339ebb/hostname",
+        "HostsPath": "/var/lib/docker/containers/139705416b3d4972a18a2580ae653c64d0c68e9246d893ec9237282c8d339ebb/hosts",
+        "LogPath": "/var/lib/docker/containers/139705416b3d4972a18a2580ae653c64d0c68e9246d893ec9237282c8d339ebb/139705416b3d4972a18a2580ae653c64d0c68e9246d893ec9237282c8d339ebb-json.log",
+        "Name": "/billionmail-core-billionmail-1",
+        "RestartCount": 0,
+        "Driver": "overlayfs",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "docker-default",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "/opt/billionmail/php-sock:/opt/billionmail/php-sock:rw",
+                "/opt/billionmail/core-data:/opt/billionmail/core/data:rw",
+                "/var/run/docker.sock:/var/run/docker.sock:ro",
+                "/opt/billionmail/vmail-data:/opt/billionmail/vmail-data:rw",
+                "/opt/billionmail/ssl-self-signed:/etc/ssl/ssl-self-signed:rw",
+                "/opt/billionmail/conf/core/fail2ban/filter.d:/etc/fail2ban/filter.d:rw",
+                "/opt/billionmail/conf/core/fail2ban/jail.d:/etc/fail2ban/jail.d:rw",
+                "/opt/billionmail/rspamd-data:/opt/billionmail/rspamd-data:rw",
+                "/opt/billionmail/core/public:/opt/billionmail/core/public:rw",
+                "/opt/billionmail/logs:/opt/billionmail/logs:rw",
+                "/opt/billionmail/logs/core:/opt/billionmail/core/logs:rw",
+                "/opt/billionmail/ssl:/etc/ssl/mail:rw",
+                "/opt/billionmail/webmail-data:/opt/billionmail/webmail-data:rw",
+                "/opt/billionmail/.env:/opt/billionmail/.env:rw",
+                "/opt/billionmail/conf:/opt/billionmail/conf:rw",
+                "/opt/billionmail/logs/fail2ban:/var/log/fail2ban:rw",
+                "/opt/billionmail/postgresql-socket:/opt/billionmail/postgresql-socket:rw"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "billionmail_billionmail-network",
+            "PortBindings": {
+                "443/tcp": [
+                    {
+                        "HostIp": "",
+                        "HostPort": "443"
+                    }
+                ],
+                "80/tcp": [
+                    {
+                        "HostIp": "",
+                        "HostPort": "80"
+                    }
+                ]
+            },
+            "RestartPolicy": {
+                "Name": "always",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": [
+                "CAP_NET_ADMIN",
+                "CAP_NET_BIND_SERVICE",
+                "CAP_NET_RAW"
+            ],
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 0,
+            "NanoCpus": 0,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 0,
+            "MemorySwap": 0,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": null,
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/acpi",
+                "/proc/asound",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/sys/devices/virtual/powercap",
+                "/sys/firmware"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "Storage": {
+            "RootFS": {
+                "Snapshot": {
+                    "Name": "overlayfs"
+                }
+            }
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/logs",
+                "Destination": "/opt/billionmail/logs",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/.env",
+                "Destination": "/opt/billionmail/.env",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/logs/core",
+                "Destination": "/opt/billionmail/core/logs",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/core-data",
+                "Destination": "/opt/billionmail/core/data",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/vmail-data",
+                "Destination": "/opt/billionmail/vmail-data",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/ssl-self-signed",
+                "Destination": "/etc/ssl/ssl-self-signed",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/conf/core/fail2ban/filter.d",
+                "Destination": "/etc/fail2ban/filter.d",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/rspamd-data",
+                "Destination": "/opt/billionmail/rspamd-data",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/webmail-data",
+                "Destination": "/opt/billionmail/webmail-data",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/conf",
+                "Destination": "/opt/billionmail/conf",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/logs/fail2ban",
+                "Destination": "/var/log/fail2ban",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/ssl",
+                "Destination": "/etc/ssl/mail",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/php-sock",
+                "Destination": "/opt/billionmail/php-sock",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/var/run/docker.sock",
+                "Destination": "/var/run/docker.sock",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/conf/core/fail2ban/jail.d",
+                "Destination": "/etc/fail2ban/jail.d",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/postgresql-socket",
+                "Destination": "/opt/billionmail/postgresql-socket",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/billionmail/core/public",
+                "Destination": "/opt/billionmail/core/public",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            }
+        ],
+        "Config": {
+            "Hostname": "core-manage",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "443/tcp": {},
+                "80/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "TZ=UTC",
+                "FAIL2BAN_INIT=y",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=C.UTF-8",
+                "LC_ALL=C.UTF-8"
+            ],
+            "Cmd": [
+                "/usr/bin/supervisord",
+                "-c",
+                "/etc/supervisor/supervisord.conf"
+            ],
+            "Image": "billionmail/core:4.9.0",
+            "Volumes": null,
+            "WorkingDir": "/",
+            "Entrypoint": [
+                "/core.sh"
+            ],
+            "Labels": {
+                "com.docker.compose.config-hash": "abbcc2f33e905b496bf7ebc3e4ac64837605f8c2aacbf70c6caa2fd785adf383",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "pgsql-billionmail:service_started:false",
+                "com.docker.compose.image": "sha256:9437a6a042a847fad408b6bf0742537da74feb935e2cc4d5a6e2276e2b2b4991",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "billionmail",
+                "com.docker.compose.project.config_files": "/opt/billionmail/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/opt/billionmail",
+                "com.docker.compose.service": "core-billionmail",
+                "com.docker.compose.version": "5.1.0",
+                "maintainer": "https://github.com/aaPanel/BillionMail"
+            }
+        },
+        "NetworkSettings": {
+            "SandboxID": "9860b8df42669ea896fec035e19355035adb9b39cb14ee4abeddb810ab5e565f",
+            "SandboxKey": "/var/run/docker/netns/9860b8df4266",
+            "Ports": {
+                "443/tcp": [
+                    {
+                        "HostIp": "0.0.0.0",
+                        "HostPort": "443"
+                    },
+                    {
+                        "HostIp": "::",
+                        "HostPort": "443"
+                    }
+                ],
+                "80/tcp": [
+                    {
+                        "HostIp": "0.0.0.0",
+                        "HostPort": "80"
+                    },
+                    {
+                        "HostIp": "::",
+                        "HostPort": "80"
+                    }
+                ]
+            },
+            "Networks": {
+                "billionmail_billionmail-network": {
+                    "IPAMConfig": {},
+                    "Links": null,
+                    "Aliases": [
+                        "billionmail-core-billionmail-1",
+                        "core-billionmail",
+                        "core"
+                    ],
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "ac037c5b9c804a5d354802715869599fbc6f1b41fd33f9805d47b17c4439aed8",
+                    "EndpointID": "90de755c8e3346ff0fea12b60472542177d86efe11597e9fbc71857f68c9f3eb",
+                    "Gateway": "172.66.1.1",
+                    "IPAddress": "172.66.1.7",
+                    "MacAddress": "ee:28:6f:f3:5d:5e",
+                    "IPPrefixLen": 24,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": [
+                        "billionmail-core-billionmail-1",
+                        "core-billionmail",
+                        "core",
+                        "139705416b3d",
+                        "core-manage"
+                    ]
+                }
+            }
+        },
+        "ImageManifestDescriptor": {
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:962ef077f733bbace6f8e8634b46d2a50898a5db007aba8f37ed9ad37f434d69",
+            "size": 2756,
+            "platform": {
+                "architecture": "amd64",
+                "os": "linux"
+            }
+        }
+    }
+]

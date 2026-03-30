@@ -1,0 +1,10 @@
+
+mail.b2bgrowth.shop /etc/ssl/mail/mail.b2bgrowth.shop/privkey.pem /etc/ssl/mail/mail.b2bgrowth.shop/fullchain.pem
+mail.affiliategrowth.shop /etc/ssl/mail/mail.affiliategrowth.shop/privkey.pem /etc/ssl/mail/mail.affiliategrowth.shop/fullchain.pem
+mail.aiemail.shop /etc/ssl/mail/mail.aiemail.shop/privkey.pem /etc/ssl/mail/mail.aiemail.shop/fullchain.pem
+mail.moescalesystem.shop /etc/ssl/mail/mail.moescalesystem.shop/privkey.pem /etc/ssl/mail/mail.moescalesystem.shop/fullchain.pem
+mail.aioutboundagents.shop /etc/ssl/mail/mail.aioutboundagents.shop/privkey.pem /etc/ssl/mail/mail.aioutboundagents.shop/fullchain.pem
+mail.b2baioutbound.shop /etc/ssl/mail/mail.b2baioutbound.shop/privkey.pem /etc/ssl/mail/mail.b2baioutbound.shop/fullchain.pem
+mail.moescale.xyz /etc/ssl/mail/mail.moescale.xyz/privkey.pem /etc/ssl/mail/mail.moescale.xyz/fullchain.pem
+mail.b2bscale.xyz /etc/ssl/mail/mail.b2bscale.xyz/privkey.pem /etc/ssl/mail/mail.b2bscale.xyz/fullchain.pem
+mail.moescaleb2b.site /etc/ssl/mail/mail.moescaleb2b.site/privkey.pem /etc/ssl/mail/mail.moescaleb2b.site/fullchain.pem

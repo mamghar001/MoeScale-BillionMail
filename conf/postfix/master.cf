@@ -146,3 +146,8 @@ scache    unix  -       -       n       -       1       scache
 smtp_bind_ip_85_121_241_250_20260328030746 unix  -       -       n       -       -       smtp
     -o smtp_bind_address=85.121.241.250
 # END BILLIONMAIL multi-ip services
+# Noez IP for aiemail.shop
+smtp_bind_ip_5_230_168_1 unix  -       -       n       -       -       smtp
+
+# Noez IP for testdomain.com
+smtp_bind_ip_5_230_168_4 unix  -       -       n       -       -       smtp
