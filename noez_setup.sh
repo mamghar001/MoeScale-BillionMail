@@ -250,6 +250,65 @@ add_domain_to_billionmail() {
         print_error "Failed to add domain"
         return 1
     fi
+    
+    # Also add to bm_multi_ip_domain for UI display
+    add_to_multi_ip_domain "$DOMAIN_TO_ADD"
+}
+
+# Add domain to bm_multi_ip_domain (for UI display of Dedicated IP)
+add_to_multi_ip_domain() {
+    local DOMAIN_TO_ADD="$1"
+    
+    print_info "Configuring multi-IP domain for UI display..."
+    
+    # Get network info
+    local network_name=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{if or (contains "b2bscale" $k) (contains "net-" $k)}}{{$k}}{{end}}{{end}}' $CONTAINER_NAME 2>/dev/null)
+    if [ -z "$network_name" ]; then
+        network_name="billionmail-net-b2bscale"
+    fi
+    
+    # Get subnet from container IP
+    local subnet="${CONTAINER_NET_NS_IP%.*}.0/24"
+    
+    # Transport name
+    local transport_name="smtp_bind_ip_$(echo $NOEZ_IP | tr '.' '_')"
+    
+    # Current time
+    local current_time=$(date +%s)
+    
+    # Check if entry exists
+    local multi_exists=$(docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -t -c \
+        "SELECT COUNT(*) FROM bm_multi_ip_domain WHERE domain='$DOMAIN_TO_ADD';" 2>/dev/null | xargs)
+    
+    if [ "$multi_exists" == "1" ]; then
+        print_status "Multi-IP domain entry already exists"
+        return 0
+    fi
+    
+    # Insert into bm_multi_ip_domain
+    # Note: Unique constraint is on (domain, outbound_ip)
+    docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -c \
+        "INSERT INTO bm_multi_ip_domain 
+         (domain, outbound_ip, network_name, subnet, postfix_ip, aliases, smtp_server_name, active, create_time, update_time, status) 
+         VALUES 
+         ('$DOMAIN_TO_ADD', '$NOEZ_IP', '$network_name', '$subnet', '$CONTAINER_NET_NS_IP', 'aliases-$(echo $DOMAIN_TO_ADD | tr '.' '-')', '$transport_name', 1, $current_time, $current_time, 'active')
+         ON CONFLICT (domain, outbound_ip) DO UPDATE SET 
+         network_name = '$network_name',
+         subnet = '$subnet',
+         postfix_ip = '$CONTAINER_NET_NS_IP',
+         smtp_server_name = '$transport_name',
+         update_time = $current_time,
+         status = 'active';" 2>/dev/null
+    
+    # Verify
+    multi_exists=$(docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -t -c \
+        "SELECT COUNT(*) FROM bm_multi_ip_domain WHERE domain='$DOMAIN_TO_ADD';" 2>/dev/null | xargs)
+    
+    if [ "$multi_exists" == "1" ]; then
+        print_status "✓ Multi-IP domain configured (IP will show in UI)"
+    else
+        print_warning "Could not add multi-IP domain entry"
+    fi
 }
 
 # Setup GRE tunnel
