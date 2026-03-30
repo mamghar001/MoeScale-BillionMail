@@ -7,9 +7,8 @@
 #   sudo bash noez_setup.sh test         # Test email sending
 #   sudo bash noez_setup.sh add IP DOMAIN # Add new IP/domain
 #   sudo bash noez_setup.sh status       # Check status
-#   sudo bash noez_setup.sh remove IP    # Remove an IP
 #
-# Version: 2.0
+# Version: 3.0 - Now with API support!
 
 set -e
 
@@ -30,9 +29,14 @@ NOEZ_GRE_REMOTE="5.230.205.35"
 DOMAIN="moescaleb2b.site"
 
 # GRE tunnel internal IPs (usually provided by Noez)
-GRE_LOCAL="192.168.31.2"     # Your side of GRE tunnel
-GRE_REMOTE="192.168.31.1"    # Noez side of GRE tunnel
+GRE_LOCAL="192.168.31.2"     # Your side
+GRE_REMOTE="192.168.31.1"    # Noez side
 GRE_SUBNET="192.168.31.0/30" # GRE subnet
+
+# BillionMail API Settings (optional - for API-based domain creation)
+# Leave empty to use database directly (faster, works without API)
+BM_API_URL=""  # e.g., "https://mail.yourdomain.com"
+BM_API_TOKEN=""  # Your API token
 
 # Docker settings (auto-detected if possible)
 CONTAINER_NAME="billionmail-postfix-billionmail-1"
@@ -51,7 +55,6 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Print functions
 print_status() { echo -e "${GREEN}[✓]${NC} $1"; }
 print_error() { echo -e "${RED}[✗]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[!]${NC} $1"; }
@@ -73,12 +76,14 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Load .env for DB credentials
+source .env 2>/dev/null || true
+
 # Auto-detect Docker network settings
 detect_docker_network() {
     print_info "Auto-detecting Docker network settings..."
     
     # Find the multi-ip network (usually contains "b2bscale" or "net-" in name)
-    # Get the IP from the network that's not the main billionmail-network
     CONTAINER_NET_NS_IP=$(docker inspect -f '{{json .NetworkSettings.Networks}}' $CONTAINER_NAME 2>/dev/null | \
         python3 -c "import sys,json; d=json.load(sys.stdin); nets=[v['IPAddress'] for k,v in d.items() if 'b2bscale' in k or 'net-' in k]; print(nets[0] if nets else list(d.values())[0]['IPAddress'])")
     
@@ -186,6 +191,65 @@ validate_config() {
     fi
     
     print_status "Configuration confirmed!"
+}
+
+# Add domain to BillionMail (via API or database)
+add_domain_to_billionmail() {
+    local DOMAIN_TO_ADD="$1"
+    
+    print_section "Adding Domain to BillionMail: $DOMAIN_TO_ADD"
+    
+    # Check if domain already exists
+    local domain_exists=$(docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -t -c \
+        "SELECT COUNT(*) FROM domain WHERE domain='$DOMAIN_TO_ADD';" 2>/dev/null | xargs)
+    
+    if [ "$domain_exists" == "1" ]; then
+        print_status "Domain $DOMAIN_TO_ADD already exists in BillionMail"
+        return 0
+    fi
+    
+    # Method 1: API (if configured)
+    if [ -n "$BM_API_URL" ] && [ -n "$BM_API_TOKEN" ]; then
+        print_info "Using BillionMail API to add domain..."
+        
+        # Create domain via API
+        local response=$(curl -s -w "\n%{http_code}" -X POST "${BM_API_URL}/api/v1/domain" \
+            -H "Authorization: Bearer ${BM_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"domain\":\"${DOMAIN_TO_ADD}\",\"mailboxes\":50,\"mailbox_quota\":5368709120,\"quota\":10737418240}" 2>/dev/null)
+        
+        local http_code=$(echo "$response" | tail -n1)
+        local body=$(echo "$response" | sed '$d')
+        
+        if [ "$http_code" == "200" ] || [ "$http_code" == "201" ]; then
+            print_status "✓ Domain created via API"
+            return 0
+        else
+            print_warning "API call failed (HTTP $http_code), falling back to database"
+            print_info "Response: $body"
+        fi
+    fi
+    
+    # Method 2: Direct database insert
+    print_info "Adding domain directly to database..."
+    
+    local current_time=$(date +%s)
+    
+    docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -c \
+        "INSERT INTO domain (domain, a_record, mailboxes, mailbox_quota, quota, rate_limit, create_time, active, urls, hasbrandinfo, current_usage) 
+         VALUES ('$DOMAIN_TO_ADD', '', 50, 5368709120, 10737418240, 12, $current_time, 1, '{}', 0, 0) 
+         ON CONFLICT (domain) DO NOTHING;" 2>/dev/null
+    
+    # Verify
+    domain_exists=$(docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -t -c \
+        "SELECT COUNT(*) FROM domain WHERE domain='$DOMAIN_TO_ADD';" 2>/dev/null | xargs)
+    
+    if [ "$domain_exists" == "1" ]; then
+        print_status "✓ Domain added to BillionMail"
+    else
+        print_error "Failed to add domain"
+        return 1
+    fi
 }
 
 # Setup GRE tunnel
@@ -333,24 +397,21 @@ EOF
         print_status "Added transport $TRANSPORT_NAME"
     fi
     
-    # Add domain to database
-    print_info "Adding domain mapping to database..."
+    # Add domain mapping in database
+    print_info "Adding domain transport mapping..."
     
-    # Source .env for DB credentials
-    source .env 2>/dev/null || true
-    
-    # Check if domain already exists
+    # Check if mapping already exists
     local existing=$(docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -t -c \
         "SELECT COUNT(*) FROM bm_domain_smtp_transport WHERE domain = '@$DOMAIN';" 2>/dev/null | xargs)
     
     if [ "$existing" == "1" ]; then
-        print_info "Domain @$DOMAIN already exists, updating..."
+        print_info "Domain transport mapping already exists, updating..."
         docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -c \
             "UPDATE bm_domain_smtp_transport SET smtp_name = '$TRANSPORT_NAME' WHERE domain = '@$DOMAIN';" 2>/dev/null
     else
         docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -c \
             "INSERT INTO bm_domain_smtp_transport (atype, domain, smtp_name) VALUES ('dedicated_ip', '@$DOMAIN', '$TRANSPORT_NAME');" 2>/dev/null
-        print_status "Added domain mapping: @$DOMAIN -> $TRANSPORT_NAME"
+        print_status "Added domain transport mapping: @$DOMAIN -> $TRANSPORT_NAME"
     fi
     
     # Reload Postfix
@@ -457,7 +518,10 @@ add_new_ip() {
         exit 1
     fi
     
-    # Run setup steps (skip GRE tunnel if same subnet)
+    # Add domain to BillionMail first
+    add_domain_to_billionmail "$NEW_DOMAIN"
+    
+    # Run setup steps
     setup_container
     setup_host_routing
     setup_postfix
@@ -470,6 +534,9 @@ add_new_ip() {
     print_section "✅ New IP Added Successfully!"
     print_info "IP: $NEW_IP"
     print_info "Domain: $NEW_DOMAIN"
+    print_info ""
+    print_info "Note: If using API, domain should appear in BillionMail UI immediately."
+    print_info "If using database method, refresh the BillionMail UI to see the domain."
 }
 
 # Show status
@@ -515,7 +582,17 @@ show_status() {
     iptables -t nat -L POSTROUTING -n -v 2>/dev/null | grep "$NOEZ_IP" | head -1 | sed 's/^/  /' || echo "  (not found)"
     
     echo ""
-    echo -e "${CYAN}Domain Mapping:${NC}"
+    echo -e "${CYAN}Domain in BillionMail:${NC}"
+    local domain_count=$(docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -t -c \
+        "SELECT COUNT(*) FROM domain WHERE domain='$DOMAIN';" 2>/dev/null | xargs)
+    if [ "$domain_count" == "1" ]; then
+        echo -e "  ${GREEN}✓${NC} Domain '$DOMAIN' exists in BillionMail"
+    else
+        echo -e "  ${RED}✗${NC} Domain '$DOMAIN' NOT found in BillionMail"
+    fi
+    
+    echo ""
+    echo -e "${CYAN}Transport Mapping:${NC}"
     docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -c \
         "SELECT domain, smtp_name FROM bm_domain_smtp_transport WHERE domain='@$DOMAIN';" 2>/dev/null | sed 's/^/  /' || echo "  (database error)"
 }
@@ -529,15 +606,23 @@ main() {
             print_section "Noez GRE Tunnel Setup for BillionMail"
             validate_config
             detect_docker_network
+            
+            # Add domain to BillionMail first
+            add_domain_to_billionmail "$DOMAIN"
+            
             setup_gre_tunnel
             setup_container
             setup_host_routing
             setup_postfix
             test_connectivity
+            
             print_section "✅ Setup Complete!"
             print_info "Your domain $DOMAIN is now configured to send from $NOEZ_IP"
             print_info "Run: $0 test  - to send a test email"
             print_info "Run: $0 status - to check status"
+            print_info ""
+            print_info "Note: Domain should appear in BillionMail UI. If not visible immediately,"
+            print_info "      refresh the page or check the Domain Management section."
             ;;
         test)
             validate_config
@@ -572,6 +657,10 @@ main() {
             echo "  sudo $0                    # Run setup"
             echo "  sudo $0 test               # Send test email"
             echo "  sudo $0 add 5.230.168.1 newdomain.com"
+            echo ""
+            echo "API Configuration (optional):"
+            echo "  Edit BM_API_URL and BM_API_TOKEN in the script to use API"
+            echo "  instead of direct database access for domain creation."
             ;;
         *)
             print_error "Unknown command: $COMMAND"

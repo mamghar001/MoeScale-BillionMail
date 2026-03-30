@@ -151,3 +151,6 @@ smtp_bind_ip_5_230_168_1 unix  -       -       n       -       -       smtp
 
 # Noez IP for testdomain.com
 smtp_bind_ip_5_230_168_4 unix  -       -       n       -       -       smtp
+
+# Noez IP for testapi.shop
+smtp_bind_ip_5_230_168_5 unix  -       -       n       -       -       smtp

@@ -423,3 +423,89 @@ Enter your VPS IP [detected: 85.121.241.162]:
 
 Just press Enter to use the detected IP, or type a different one.
 
+
+---
+
+## 🔌 API Support (Optional)
+
+The script can use the BillionMail API instead of direct database access:
+
+### Why Use API?
+- More "official" method
+- Triggers any API hooks/webhooks
+- Better for multi-server setups
+
+### Configure API:
+
+Edit the script and set:
+```bash
+BM_API_URL="https://mail.yourdomain.com"
+BM_API_TOKEN="your-api-token"
+```
+
+Get your API token from BillionMail:
+1. Go to **System Settings** → **API Tokens**
+2. Generate new token
+3. Copy the token
+
+### API vs Database:
+
+| Method | Speed | Requires Token | Shows in UI Immediately |
+|--------|-------|----------------|------------------------|
+| **API** | Slower | Yes | Yes |
+| **Database** | Faster | No | Yes (may need refresh) |
+
+**Default:** Database method (works out of the box)
+
+---
+
+## 🎯 What the Script Does
+
+For each domain/IP, the script:
+
+1. **Creates domain in BillionMail** (`domain` table)
+   - So it shows in the UI
+   - Sets proper quotas and limits
+
+2. **Adds transport mapping** (`bm_domain_smtp_transport` table)
+   - Links domain to Noez IP
+
+3. **Configures Postfix** (`master.cf`)
+   - Creates transport for the IP
+
+4. **Sets up networking**
+   - Adds IP to container
+   - Configures iptables SNAT
+   - Sets up policy routing
+
+5. **Tests connectivity**
+   - Verifies internet access
+   - Tests DNS resolution
+
+---
+
+## ✅ Verification
+
+After running the script, verify:
+
+```bash
+# Check domain is in BillionMail
+sudo bash noez_setup.sh status
+
+# Or manually:
+docker exec -i billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail -c \
+"SELECT domain, active FROM domain WHERE domain='yourdomain.com';"
+```
+
+Should show:
+```
+    domain     | active 
+---------------+--------
+yourdomain.com|      1
+```
+
+**If domain not visible in UI:**
+- Refresh the BillionMail page
+- Check browser cache (Ctrl+Shift+R)
+- Verify domain is in database using command above
+
