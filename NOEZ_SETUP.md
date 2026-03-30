@@ -84,3 +84,40 @@ tail -f /opt/billionmail/logs/postfix/mail.log
 # Check auto-start service
 systemctl status noez-ips.service
 ```
+
+## 🔧 Fixing SPF Issues
+
+If you get "SPF fail - not authorized" errors:
+
+### Option 1: Automatic (with Cloudflare API)
+
+1. Edit the script and add your API token:
+```bash
+nano noez_setup.sh
+# Change:
+CF_API_TOKEN="your-cloudflare-api-token-here"
+```
+
+2. Get token from: https://dash.cloudflare.com/profile/api-tokens
+   - Create token with: Zone:Read, DNS:Edit permissions
+
+3. Re-run for the domain:
+```bash
+sudo bash noez_setup.sh add 5.230.168.X domain.com
+```
+
+### Option 2: Manual (Cloudflare Dashboard)
+
+1. Go to https://dash.cloudflare.com
+2. Select your domain
+3. Go to DNS
+4. Find TXT record with SPF
+5. Update to include your Noez IP:
+```
+v=spf1 +a +mx +ip4:YOUR_VPS_IP +ip4:NOEZ_IP ~all
+```
+
+Example for 5.230.168.10:
+```
+v=spf1 +a +mx +ip4:66.55.64.133 +ip4:5.230.168.8 +ip4:5.230.168.10 ~all
+```
