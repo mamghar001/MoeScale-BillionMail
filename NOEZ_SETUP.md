@@ -2,273 +2,226 @@
 
 > **ONE SCRIPT - ONE COMMAND - DOES EVERYTHING**
 >
-> ✅ GRE Tunnel Setup
+> ✅ GRE Tunnel Setup  
 > ✅ BillionMail Domain Configuration  
-> ✅ Container Networking
-> ✅ Postfix Configuration
-> ✅ Cloudflare DNS (automatic SPF, A, DMARC records)
-> ✅ Auto-start on Boot
+> ✅ Container Networking  
+> ✅ Postfix Configuration  
+> ✅ Cloudflare DNS (automatic SPF, A, DMARC records)  
+> ✅ Auto-start on Boot  
+> ✅ Multiple Domains per IP  
 
-## 🚀 ONE COMMAND SETUP
+## 🚀 QUICK START (Fresh VPS Install)
 
-```bash
-# 1. Copy the example config file
-cp noez_setup.env.example noez_setup.env
-
-# 2. Edit with your values (see Configuration section below)
-nano noez_setup.env
-
-# 3. Run the setup
-sudo bash /opt/billionmail/noez_setup.sh
-```
-
-That's it! This single command will:
-- Create auto-start service (boot persistence)
-- Create GRE tunnel
-- Add domain to BillionMail
-- Setup Cloudflare DNS (SPF, A, DMARC records)
-- Configure container networking
-- Setup iptables rules
-- Configure Postfix
-- Test connectivity
-
-Or run **interactively** without config file:
-```bash
-sudo bash /opt/billionmail/noez_setup.sh
-# Script will prompt for all required values
-```
-
-## 📋 Prerequisites
-
-- VPS with public IP and root access
+### Prerequisites
+- Ubuntu/Debian VPS with public IP
 - Noez account with GRE tunnel service
-- BillionMail installed (`/opt/billionmail`)
-- Cloudflare account (for automatic DNS)
+- BillionMail installed at `/opt/billionmail`
+- Root/sudo access
 
-## 🔧 Configuration
-
-### Option 1: Config File (Recommended)
-
-Copy the example file and edit:
+### Step 1: Create Configuration File
 
 ```bash
+cd /opt/billionmail
 cp noez_setup.env.example noez_setup.env
 nano noez_setup.env
 ```
 
 Fill in your values:
-
 ```bash
-# REQUIRED: Your Noez IP
+# REQUIRED - Get these from Noez panel
 NOEZ_IP="5.230.168.0"
+HOST_IP="YOUR_VPS_PUBLIC_IP"
+NOEZ_GRE_REMOTE="5.230.205.35"  # From Noez panel
 
-# REQUIRED: Your VPS public IP
-HOST_IP="YOUR_VPS_IP_HERE"
-
-# REQUIRED: Noez GRE endpoint (from Noez panel)
-NOEZ_GRE_REMOTE="5.230.205.35"
-
-# REQUIRED: Domain to send from
+# Your domain
 DOMAIN="yourdomain.com"
 
-# ALL Noez IPs for auto-setup on boot
-ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.10"
+# All your Noez IPs (for auto-setup)
+ALL_NOEZ_IPS="5.230.168.0"
 
-# Cloudflare API (for automatic DNS)
+# Optional: Cloudflare for auto-DNS
 CF_API_TOKEN="your-cloudflare-token"
-CF_ZONE_ID=""  # Optional - script auto-detects
 ```
 
-**⚠️ IMPORTANT:** `noez_setup.env` is in `.gitignore` and will NOT be committed to git. Keep your API tokens safe!
-
-### Option 2: Interactive Mode
-
-If `noez_setup.env` doesn't exist, the script will prompt for values interactively:
+### Step 2: Run Setup
 
 ```bash
 sudo bash noez_setup.sh
-# ? Enter your Noez IP: 5.230.168.0
-# ? Enter your VPS IP: YOUR_VPS_IP
-# ...etc
 ```
 
-**Get Cloudflare API Token:**
-1. Go to: https://dash.cloudflare.com/profile/api-tokens
-2. Create token with: `Zone:Read`, `DNS:Edit` permissions
-3. Copy the token
+That's it! The script will:
+1. Create GRE tunnel
+2. Configure container networking
+3. Add domain to BillionMail
+4. Setup Cloudflare DNS (if token provided)
+5. Configure Postfix with IP binding
+6. Enable auto-start on boot
+
+### Step 3: Test
+
+Send a test email from `admin@yourdomain.com` to [mail-tester.com](https://www.mail-tester.com/)
+
+---
 
 ## 📊 Commands
 
 | Command | Description |
 |---------|-------------|
-| `sudo bash noez_setup.sh` | **COMPLETE SETUP** - does everything |
-| `sudo bash noez_setup.sh test` | Send test email |
-| `sudo bash noez_setup.sh add IP DOMAIN` | Add new IP/domain |
+| `sudo bash noez_setup.sh` | **COMPLETE SETUP** - Run everything |
+| `sudo bash noez_setup.sh add IP DOMAIN` | Add new IP/domain pair |
 | `sudo bash noez_setup.sh status` | Check status |
+
+---
 
 ## 🔄 Adding More IPs/Domains
 
+### Add Another IP + Domain
+
 ```bash
-# Add another IP and domain with automatic DNS
 sudo bash noez_setup.sh add 5.230.168.X newdomain.com
-
-# The script will:
-# - Add domain to BillionMail
-# - Create A record: mail.DOMAIN -> HOST_IP
-# - Create SPF record: v=spf1 ip4:NOEZ_IP ~all
-# - Create DMARC record
-# - Setup container networking
-# - Configure Postfix
-# - Add to auto-start service
 ```
 
-Then update `noez_setup.env`:
-```bash
-ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.10 5.230.168.X"
-```
-
-### Multiple Domains per IP
-
-You can have **multiple domains sharing the same IP**:
+### Multiple Domains on Same IP
 
 ```bash
-# Domain 1 uses IP 5.230.168.10
-sudo bash noez_setup.sh add 5.230.168.10 aiemailagents.shop
+# Domain 1
+sudo bash noez_setup.sh add 5.230.168.10 domain1.com
 
-# Domain 2 uses SAME IP 5.230.168.10
-sudo bash noez_setup.sh add 5.230.168.10 affiliatehighticket.shop
+# Domain 2 (same IP)
+sudo bash noez_setup.sh add 5.230.168.10 domain2.com
 ```
 
 **How it works:**
 - Both domains share the same Postfix transport
-- Each domain has its own DNS records (A, SPF, DMARC)
+- Each domain has its own DNS records
 - Both send from IP `5.230.168.10`
-- SPF record for each domain includes: `ip4:5.230.168.10`
 
-**Benefits:**
-- Efficient IP usage
-- Separate domain reputation
-- Individual DNS management
+### Update ALL_NOEZ_IPS
 
-## ✅ What the Script Does
+After adding all IPs, update `noez_setup.env`:
+```bash
+ALL_NOEZ_IPS="5.230.168.0 5.230.168.1 5.230.168.2 5.230.168.10"
+```
 
-### 1. Auto-Start Service
-- Creates `/opt/billionmail/setup_noez_ips.sh`
-- Creates `/etc/systemd/system/noez-ips.service`
-- Enables service with `systemctl enable`
-- Starts service immediately
+This ensures all IPs are re-added on boot.
 
-### 2. GRE Tunnel Setup
-- Creates tunnel if not exists
-- Adds Noez IP to tunnel
-- Sets up routing policies
+---
 
-### 3. BillionMail Integration
-- Adds domain to `domain` table
-- Adds transport mapping
-- Adds to `bm_multi_ip_domain` (shows Dedicated IP in UI)
+## 🔧 Architecture
 
-### 4. Cloudflare DNS (Auto)
-- **A record:** mail.DOMAIN → HOST_IP
-- **SPF record:** v=spf1 ip4:NOEZ_IP ~all
-- **DMARC record:** _dmarc.DOMAIN
-- **Cleanup:** Deletes old duplicate records before creating new ones
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         HOST (VPS)                          │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              GRE Tunnel (gre1)                       │   │
+│  │  ┌──────────────────────────────────────────────┐   │   │
+│  │  │ 5.230.168.0  ┌───┐                          │   │   │
+│  │  │ 5.230.168.1  │IP1│  →  Internet (Noez)      │   │   │
+│  │  │ 5.230.168.2  └───┘                          │   │   │
+│  │  │ 5.230.168.10                                  │   │   │
+│  │  └──────────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                           │                                  │
+│                    Docker Bridge                             │
+│                           │                                  │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │         BillionMail Postfix Container               │   │
+│  │  ┌──────────────────────────────────────────────┐   │   │
+│  │  │ Lo interface:                                │   │   │
+│  │  │   5.230.168.0/32 (binds to IP1)             │   │   │
+│  │  │   5.230.168.1/32 (binds to IP2)             │   │   │
+│  │  │   ...                                        │   │   │
+│  │  └──────────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### 5. Container Networking
-- Adds Noez IP to container loopback
-- Configures container routing
+**Key Points:**
+- GRE tunnel carries all Noez IPs
+- Container loopback binds to each IP for Postfix
+- Host routes reply traffic back to container (not locally)
+- Postfix `smtp_bind_address` ensures correct source IP
 
-### 6. Host Routing
-- iptables packet marking
-- Policy routing
-- SNAT for source IP rewriting
-
-### 7. Postfix Configuration
-- Creates transport in master.cf
-- Maps domain to transport
-- Restarts Postfix
+---
 
 ## 🆘 Troubleshooting
 
-### "SPF fail - not authorized"
+### "Email sent from wrong IP"
 
-The SPF record is missing your Noez IP. The script now **automatically fixes this** when you add a domain with `CF_API_TOKEN` set!
+**Cause:** Postfix transport missing `smtp_bind_address`
 
-If still failing, check Cloudflare DNS:
-```bash
-dig +short TXT yourdomain.com | grep spf
+**Fix:** Already fixed in latest version. Verify in `conf/postfix/master.cf`:
+```
+smtp_bind_ip_5_230_168_10 unix - - n - - smtp
+  -o smtp_bind_address=5.230.168.10
 ```
 
-Should include: `ip4:YOUR_NOEZ_IP`
+### "No reply from container"
+
+**Cause:** Host processing Noez IP traffic locally instead of forwarding to container
+
+**Fix:** Run the setup script again, or manually:
+```bash
+# Remove local route
+ip route del table local 5.230.168.10 dev gre1
+
+# Add route to container
+ip route add 5.230.168.10 dev br-825cda742c28
+```
 
 ### "Container not found"
-```bash
-cd /opt/billionmail && docker compose up -d
-```
 
-### "Domain not showing in UI"
-- Refresh browser: Ctrl+Shift+R
-- Run: `sudo bash noez_setup.sh status`
+```bash
+cd /opt/billionmail
+docker compose up -d
+```
 
 ### Check logs:
 ```bash
 tail -f /opt/billionmail/logs/postfix/mail.log
 ```
 
-## 🔍 Verification
-
-After running:
-```bash
-sudo bash noez_setup.sh status
-```
-
-Should show:
-- ✅ GRE tunnel exists
-- ✅ Container running
-- ✅ Noez IP in container
-- ✅ Domain in BillionMail
-- ✅ Auto-start service enabled
+---
 
 ## 💾 Auto-Start on Boot
 
-The script **automatically enables** auto-start. To verify:
+The script automatically creates a systemd service (`noez-ips.service`) that:
+1. Waits for Docker to start
+2. Waits for BillionMail container
+3. Re-adds all Noez IPs to container
+4. Configures host routing
 
+**Verify:**
 ```bash
-systemctl is-enabled noez-ips.service
-# Output: enabled
+systemctl status noez-ips.service
 ```
 
-If you need to manually re-add IPs after container restart:
+**Manual run:**
 ```bash
 sudo bash /opt/billionmail/setup_noez_ips.sh
 ```
+
+---
 
 ## 📝 Files
 
 | File | Purpose | In Git? |
 |------|---------|---------|
-| `noez_setup.sh` | **MAIN SCRIPT** - Run this | ✅ Yes |
+| `noez_setup.sh` | **Main script** | ✅ Yes |
 | `noez_setup.env.example` | Config template | ✅ Yes |
-| `noez_setup.env` | **YOUR PRIVATE CONFIG** | ❌ No (gitignored) |
+| `noez_setup.env` | **Your private config** | ❌ No (gitignored) |
 | `NOEZ_SETUP.md` | This documentation | ✅ Yes |
-| `setup_noez_ips.sh` | Auto-created helper for systemd | ❌ No |
-
-### For New VPS Install
-
-```bash
-# 1. Clone/pull repo
-git clone <repo> /opt/billionmail
-cd /opt/billionmail
-
-# 2. Create your private config from template
-cp noez_setup.env.example noez_setup.env
-nano noez_setup.env  # Fill in your values
-
-# 3. Run setup
-sudo bash noez_setup.sh
-```
+| `setup_noez_ips.sh` | Auto-generated helper | ❌ No |
 
 ---
 
-**Version:** 6.0  
-**Status:** ✅ PRODUCTION READY - Env file support & Cloudflare DNS auto-integration
+## ✅ Tested Configurations
+
+- Ubuntu 22.04 LTS
+- Docker 24.x
+- BillionMail v5.x
+- Noez GRE tunnel service
+- Cloudflare DNS API
+
+**Version:** 6.1 - Production Ready  
+**Date:** 2026-03-30
