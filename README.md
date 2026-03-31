@@ -6,6 +6,8 @@
 > ```
 > This installs the latest working version with all fixes applied!
 
+> **📚 Looking for Noez GRE Tunnel setup?** Check out **[NOEZ_SETUP.md](NOEZ_SETUP.md)** and **[SKILLS.md](SKILLS.md)** (comprehensive AI agent knowledge base)
+
 ---
 
 ## 📦 Quick Start Options
@@ -223,6 +225,30 @@ sudo bash bm.sh log-file postfix
 # Multi-IP setup (after adding domains)
 sudo bash bm.sh multi_ip
 ```
+
+---
+
+## 📚 Documentation
+
+### For Users:
+- **[NOEZ_SETUP.md](NOEZ_SETUP.md)** - Complete guide for Noez GRE tunnel setup
+  - One-command setup
+  - Adding multiple IPs/domains
+  - Cloudflare DNS integration
+  - Troubleshooting common issues
+
+### For Developers/AI Agents:
+- **[SKILLS.md](SKILLS.md)** ⭐ **Comprehensive Knowledge Base (1,161 lines)**
+  - Complete architecture & packet flow diagrams
+  - ALL bugs encountered with solutions
+  - Troubleshooting decision trees
+  - Emergency recovery procedures
+  - Integration points (DB, Postfix, Cloudflare, Systemd)
+  - Command reference
+  - **If you're an AI agent, READ THIS FIRST!**
+
+### Configuration:
+- **[noez_setup.env.example](noez_setup.env.example)** - Configuration template for Noez setup
 
 ---
 
