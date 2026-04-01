@@ -205,6 +205,8 @@ services:
       environment:
         - TZ=${TZ}
         - FAIL2BAN_INIT=${FAIL2BAN_INIT:-y}
+        - DBPASS=${DBPASS}
+        - REDISPASS=${REDISPASS}
       cap_add:
         - NET_BIND_SERVICE
         - NET_ADMIN

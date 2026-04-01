@@ -1,0 +1,9 @@
+
+<73e71709-a733-4b97-bbf8-11bd1f236e7a@delivery-test.emailengine.app>: connect to delivery-test.emailengine.app[95.216.108.162]:25: Connection timed out
+recipient=73e71709-a733-4b97-bbf8-11bd1f236e7a@delivery-test.emailengine.app
+offset=1026
+dsn_orig_rcpt=rfc822;73e71709-a733-4b97-bbf8-11bd1f236e7a@delivery-test.emailengine.app
+status=4.4.1
+action=delayed
+reason=connect to delivery-test.emailengine.app[95.216.108.162]:25: Connection timed out
+

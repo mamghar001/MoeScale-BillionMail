@@ -1,0 +1,9 @@
+
+<bd7307ad-ffda-4874-b6d4-435c8b180eb6@delivery-test.emailengine.app>: delivery temporarily suspended: connect to delivery-test.emailengine.app[95.216.108.162]:25: Connection timed out
+recipient=bd7307ad-ffda-4874-b6d4-435c8b180eb6@delivery-test.emailengine.app
+offset=1016
+dsn_orig_rcpt=rfc822;bd7307ad-ffda-4874-b6d4-435c8b180eb6@delivery-test.emailengine.app
+status=4.4.1
+action=delayed
+reason=delivery temporarily suspended: connect to delivery-test.emailengine.app[95.216.108.162]:25: Connection timed out
+

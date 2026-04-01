@@ -197,9 +197,10 @@ gather_info() {
         CF_API_TOKEN=${CF_API_TOKEN:-}
     fi
     
-    # Generate secure passwords
-    DB_PASS=$(openssl rand -base64 16)
-    REDIS_PASS=$(openssl rand -base64 16)
+    # Generate secure passwords (alphanumeric only, no base64 padding)
+    # Note: Base64 passwords with == padding break DockerEnv which splits on =
+    DB_PASS=$(LC_ALL=C </dev/urandom tr -dc A-Za-z0-9 2>/dev/null | head -c 32)
+    REDIS_PASS=$(LC_ALL=C </dev/urandom tr -dc A-Za-z0-9 2>/dev/null | head -c 32)
     
     success "Configuration gathered"
 }
@@ -314,9 +315,47 @@ EOF
     success ".env file created"
 }
 
+# Fix SQL configs with correct password (before install)
+fix_sql_configs() {
+    log "Configuring SQL connection files..."
+    
+    # Update all Postfix SQL config files with correct password
+    for f in conf/postfix/sql/pgsql_*.cf; do
+        if [ -f "$f" ]; then
+            sed -i "s/^password = .*/password = $DB_PASS/" "$f"
+        fi
+    done
+    
+    # Update Dovecot SQL config with correct password
+    if [ -f "conf/dovecot/conf.d/dovecot-sql.conf.ext" ]; then
+        sed -i "s/^connect = .*/connect = host=pgsql dbname=$DBNAME user=$DBUSER password=$DB_PASS/" conf/dovecot/conf.d/dovecot-sql.conf.ext
+    fi
+    
+    # Update Dovecot SSL config to use correct domain
+    if [ -f "conf/dovecot/conf.d/10-ssl.conf" ]; then
+        # Replace any existing mail.* domain with mail.$MAIN_DOMAIN
+        sed -i "s/mail\.[^.]*\.[^.]*{/mail.$MAIN_DOMAIN {/g" conf/dovecot/conf.d/10-ssl.conf
+        sed -i "s|/mail\.[^/]*/|/mail.$MAIN_DOMAIN/|g" conf/dovecot/conf.d/10-ssl.conf
+    fi
+    
+    # Update Rspamd Redis config with correct password
+    if [ -f "conf/rspamd/local.d/redis.conf" ]; then
+        sed -i "s/^servers.*password=.*/servers = \"redis:6379\";\n  password = \"$REDIS_PASS\";/" conf/rspamd/local.d/redis.conf
+    fi
+    
+    success "SQL configs updated"
+}
+
 # Run install script
 run_install() {
     log "Running BillionMail install script..."
+    
+    # Fix SQL configs before install
+    fix_sql_configs
+    
+    # Fix Postfix myhostname to match domain (for PTR record alignment)
+    log "Configuring Postfix..."
+    sed -i "s/^myhostname = .*/myhostname = $MAIN_DOMAIN/" conf/postfix/main.cf 2>/dev/null || true
     
     chmod +x install.sh
     
@@ -419,12 +458,31 @@ verify_install() {
         exit 1
     fi
     
+    # Wait for core to be ready
+    log "Waiting for core service to initialize..."
+    sleep 5
+    
+    # Check if core is responding (JWT fix verification)
+    if curl -s http://localhost:${HTTP_PORT:-80}/api/health > /dev/null 2>&1 || curl -s http://localhost:${HTTP_PORT:-80}/ > /dev/null 2>&1; then
+        success "Core web service is responding"
+    else
+        warning "Core service may still be initializing (JWT requires DBPASS/REDISPASS)"
+        warning "If installation hangs, check: docker logs billionmail-core-billionmail-1"
+    fi
+    
     # Check Postfix config
     MYHOSTNAME=$(docker exec billionmail-postfix-billionmail-1 postconf -h myhostname 2>/dev/null)
     if [ "$MYHOSTNAME" == "$MAIN_DOMAIN" ]; then
         success "Postfix hostname correct: $MYHOSTNAME"
     else
         warning "Postfix hostname is $MYHOSTNAME (expected $MAIN_DOMAIN)"
+    fi
+    
+    # Test database connection from Postfix container
+    if docker exec -e PGPASSWORD=$DB_PASS billionmail-postfix-billionmail-1 psql -h pgsql -U billionmail -d billionmail -c "SELECT 1;" > /dev/null 2>&1; then
+        success "Database connection from Postfix OK"
+    else
+        warning "Database connection from Postfix failed - may need SQL config fix"
     fi
     
     # Test database connection

@@ -1,0 +1,9 @@
+
+<4d200bb6-9aee-4ff3-a065-d30aa408f599@delivery-test.emailengine.app>: delivery temporarily suspended: connect to delivery-test.emailengine.app[95.216.108.164]:25: Connection timed out
+recipient=4d200bb6-9aee-4ff3-a065-d30aa408f599@delivery-test.emailengine.app
+offset=1016
+dsn_orig_rcpt=rfc822;4d200bb6-9aee-4ff3-a065-d30aa408f599@delivery-test.emailengine.app
+status=4.4.1
+action=delayed
+reason=delivery temporarily suspended: connect to delivery-test.emailengine.app[95.216.108.164]:25: Connection timed out
+

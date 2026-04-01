@@ -144,17 +144,26 @@ scache    unix  -       -       n       -       1       scache
 
 # Noez IP for aiemail.shop
 smtp_bind_ip_5_230_168_1 unix  -       -       n       -       -       smtp
+  -o smtp_bind_address=5.230.168.1
 
 
 
 # Noez IP for moescaleb2b.site
 smtp_bind_ip_5_230_168_0 unix  -       -       n       -       -       smtp
+  -o smtp_bind_address=5.230.168.0
 
 # Noez IP for aioutboundagents.shop
 smtp_bind_ip_5_230_168_2 unix  -       -       n       -       -       smtp
+  -o smtp_bind_address=5.230.168.2
 
 # Noez IP for aiemailagents.shop
 smtp_bind_ip_5_230_168_10 unix  -       -       n       -       -       smtp
+  -o smtp_bind_address=5.230.168.10
 
 # Noez IP for afiliatemarketing.shop
 smtp_bind_ip_5_230_168_11 unix  -       -       n       -       -       smtp
+  -o smtp_bind_address=5.230.168.11
+
+# Noez IP for affilliatemarketing.shop
+smtp_bind_ip_5_230_168_12 unix  -       -       n       -       -       smtp
+  -o smtp_bind_address=5.230.168.12

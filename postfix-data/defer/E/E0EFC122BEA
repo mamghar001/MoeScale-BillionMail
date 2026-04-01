@@ -1,0 +1,9 @@
+
+<b41571c8-c9fb-4953-9206-be6f747848a6@delivery-test.emailengine.app>: connect to delivery-test.emailengine.app[95.216.108.164]:25: Connection timed out
+recipient=b41571c8-c9fb-4953-9206-be6f747848a6@delivery-test.emailengine.app
+offset=1016
+dsn_orig_rcpt=rfc822;b41571c8-c9fb-4953-9206-be6f747848a6@delivery-test.emailengine.app
+status=4.4.1
+action=delayed
+reason=connect to delivery-test.emailengine.app[95.216.108.164]:25: Connection timed out
+
