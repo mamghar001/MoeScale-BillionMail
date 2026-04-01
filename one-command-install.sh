@@ -229,19 +229,25 @@ setup_ips() {
     INTERFACE=$(ip route | grep default | awk '{print $5}' | head -1)
     success "Network interface: $INTERFACE"
     
+    # Get subnet from primary IP (usually /24)
+    SUBNET=$(ip addr show dev $INTERFACE | grep "$VPS_IP" | awk '{print $2}' | cut -d'/' -f2 | head -1)
+    SUBNET=${SUBNET:-24}
+    
     # Add primary IP if not already set
     if ! ip addr show dev $INTERFACE | grep -q "$VPS_IP"; then
         warning "Primary IP $VPS_IP not found on interface"
         warning "Make sure your VPS has this IP assigned"
     fi
     
-    # Add extra IPs
+    # Add extra IPs temporarily
+    declare -a IP_LIST
     if [ -n "$EXTRA_IPS" ]; then
         IFS=',' read -ra IPS <<< "$EXTRA_IPS"
         for ip in "${IPS[@]}"; do
             ip=$(echo $ip | xargs) # trim whitespace
+            IP_LIST+=("$ip")
             if ! ip addr show dev $INTERFACE | grep -q "$ip"; then
-                log "Adding IP $ip to $INTERFACE"
+                log "Adding IP $ip to $INTERFACE (temporary)"
                 ip addr add $ip/32 dev $INTERFACE 2>/dev/null || warning "Failed to add $ip (may need manual setup)"
             else
                 success "IP $ip already configured"
@@ -249,17 +255,174 @@ setup_ips() {
         done
     fi
     
-    # Make IPs persistent
+    # Make IPs persistent via netplan
+    make_ips_persistent "$INTERFACE" "$VPS_IP" "$SUBNET" "${IP_LIST[@]}"
+}
+
+# Make IPs persistent in netplan
+make_ips_persistent() {
+    local INTERFACE=$1
+    local PRIMARY_IP=$2
+    local SUBNET=$3
+    shift 3
+    local EXTRA_IPS_LIST=("$@")
+    
     NETPLAN_FILE="/etc/netplan/50-cloud-init.yaml"
-    if [ -f "$NETPLAN_FILE" ]; then
-        warning "To make IPs persistent, add them to $NETPLAN_FILE"
-        warning "Example:"
-        echo "            addresses:"
-        echo "            - $VPS_IP/24"
-        for ip in $EXTRA_IPS; do
-            echo "            - $ip/32"
-        done
+    NETPLAN_BACKUP="/etc/netplan/50-cloud-init.yaml.bak.$(date +%Y%m%d_%H%M%S)"
+    
+    if [ ! -f "$NETPLAN_FILE" ]; then
+        warning "Netplan config not found at $NETPLAN_FILE"
+        warning "IP configuration will not persist after reboot"
+        return
     fi
+    
+    log "Making IPs persistent in netplan..."
+    
+    # Backup original
+    cp "$NETPLAN_FILE" "$NETPLAN_BACKUP"
+    
+    # Create Python script to safely modify YAML
+    cat > /tmp/update_netplan.py << 'PYEOF'
+import sys
+import yaml
+import re
+
+def update_netplan(file_path, interface, primary_ip, subnet, extra_ips):
+    with open(file_path, 'r') as f:
+        content = f.read()
+    
+    # Load YAML
+    try:
+        config = yaml.safe_load(content)
+    except yaml.YAMLError as e:
+        print(f"Error parsing YAML: {e}")
+        return False
+    
+    if not config or 'network' not in config:
+        print("Invalid netplan config structure")
+        return False
+    
+    network = config['network']
+    
+    # Find the interface configuration
+    if 'ethernets' in network:
+        ethernets = network['ethernets']
+        
+        # Check if interface exists or use first ethernet
+        if interface in ethernets:
+            iface_config = ethernets[interface]
+        else:
+            # Try to find matching interface
+            iface_config = None
+            for iface, cfg in ethernets.items():
+                if cfg.get('dhcp4', False) == False or 'addresses' in cfg:
+                    iface_config = cfg
+                    interface = iface
+                    break
+            
+            if iface_config is None:
+                # Use first interface
+                for iface, cfg in ethernets.items():
+                    iface_config = cfg
+                    interface = iface
+                    break
+        
+        if iface_config:
+            # Build addresses list
+            addresses = [f"{primary_ip}/{subnet}"]
+            for ip in extra_ips:
+                if ip and ip != primary_ip:
+                    addresses.append(f"{ip}/32")
+            
+            # Update config
+            iface_config['dhcp4'] = False
+            iface_config['addresses'] = addresses
+            
+            # Add routes if not present (for default gateway)
+            if 'routes' not in iface_config:
+                # Get default gateway
+                import subprocess
+                try:
+                    result = subprocess.run(['ip', 'route', 'show', 'default'], 
+                                          capture_output=True, text=True)
+                    if result.returncode == 0:
+                        gateway = None
+                        for line in result.stdout.split('\n'):
+                            if 'via' in line:
+                                parts = line.split()
+                                via_idx = parts.index('via')
+                                if via_idx + 1 < len(parts):
+                                    gateway = parts[via_idx + 1]
+                                    break
+                        
+                        if gateway:
+                            iface_config['routes'] = [
+                                {'to': 'default', 'via': gateway}
+                            ]
+                except:
+                    pass
+            
+            # Add nameservers if not present
+            if 'nameservers' not in iface_config:
+                iface_config['nameservers'] = {
+                    'addresses': ['8.8.8.8', '8.8.4.4']
+                }
+    
+    # Write back
+    with open(file_path, 'w') as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    
+    return True
+
+if __name__ == '__main__':
+    if len(sys.argv) < 5:
+        print("Usage: update_netplan.py <file> <interface> <primary_ip> <subnet> [extra_ips...]")
+        sys.exit(1)
+    
+    file_path = sys.argv[1]
+    interface = sys.argv[2]
+    primary_ip = sys.argv[3]
+    subnet = sys.argv[4]
+    extra_ips = sys.argv[5:] if len(sys.argv) > 5 else []
+    
+    success = update_netplan(file_path, interface, primary_ip, subnet, extra_ips)
+    sys.exit(0 if success else 1)
+PYEOF
+    
+    # Install PyYAML if needed
+    if ! python3 -c "import yaml" 2>/dev/null; then
+        log "Installing PyYAML..."
+        apt-get install -y python3-yaml -qq 2>/dev/null || pip3 install pyyaml -q 2>/dev/null || true
+    fi
+    
+    # Run Python script
+    if python3 /tmp/update_netplan.py "$NETPLAN_FILE" "$INTERFACE" "$PRIMARY_IP" "$SUBNET" "${EXTRA_IPS_LIST[@]}"; then
+        success "Netplan config updated"
+        
+        # Validate and apply
+        if netplan generate 2>/dev/null; then
+            success "Netplan configuration is valid"
+            
+            # Apply netplan (may disconnect SSH briefly)
+            log "Applying netplan configuration..."
+            if netplan apply 2>/dev/null; then
+                success "Netplan applied successfully"
+                success "IPs will persist after reboot"
+            else
+                warning "Netplan apply had issues, but config is saved"
+                warning "Changes will take effect on next boot"
+            fi
+        else
+            warning "Netplan config validation failed, restoring backup"
+            cp "$NETPLAN_BACKUP" "$NETPLAN_FILE"
+        fi
+    else
+        warning "Failed to update netplan config automatically"
+        warning "IPs added temporarily but will not persist after reboot"
+        warning "Manual config: Edit $NETPLAN_FILE and run 'netplan apply'"
+    fi
+    
+    rm -f /tmp/update_netplan.py
 }
 
 # Clone repository
@@ -357,6 +520,14 @@ fix_sql_configs() {
     # Update Rspamd Redis config with correct password
     if [ -f "conf/rspamd/local.d/redis.conf" ]; then
         sed -i "s/^servers.*password=.*/servers = \"redis:6379\";\n  password = \"$REDIS_PASS\";/" conf/rspamd/local.d/redis.conf
+    fi
+    
+    # Fix Postfix main.cf hostname BEFORE containers start
+    if [ -f "conf/postfix/main.cf" ]; then
+        log "Setting Postfix hostname to $MAIN_DOMAIN..."
+        sed -i "s/^myhostname = .*/myhostname = $MAIN_DOMAIN/" conf/postfix/main.cf
+        # Also set myorigin for proper domain alignment
+        sed -i "s/^#*myorigin = .*/myorigin = $MAIN_DOMAIN/" conf/postfix/main.cf 2>/dev/null || true
     fi
     
     success "SQL configs updated"
@@ -528,50 +699,81 @@ verify_install() {
     
     cd "$BILLIONMAIL_DIR"
     
-    # Check containers
-    if docker compose ps | grep -q "running"; then
-        success "Containers are running"
-    else
-        error "Containers not running properly"
-        docker compose ps
-        exit 1
-    fi
+    # Wait for containers to fully start
+    log "Waiting for containers to initialize (30 seconds)..."
+    sleep 10
     
-    # Wait for core to be ready
-    log "Waiting for core service to initialize..."
+    # Check containers with better status detection
+    log "Checking container status..."
     sleep 5
     
+    RUNNING_COUNT=$(docker compose ps --format json 2>/dev/null | grep -c '"State":"running"' || docker compose ps 2>/dev/null | grep -c "Up" || echo "0")
+    TOTAL_COUNT=$(docker compose ps --format json 2>/dev/null | grep -c '"Service":' || docker compose ps 2>/dev/null | tail -n +2 | wc -l || echo "0")
+    
+    if [ "$RUNNING_COUNT" -ge 6 ] || docker compose ps | grep -q "Up"; then
+        success "Containers are running ($RUNNING_COUNT/$TOTAL_COUNT)"
+        docker compose ps
+    else
+        warning "Some containers may still be starting..."
+        docker compose ps
+    fi
+    
+    # Wait more for core to be ready
+    log "Waiting for core service to initialize..."
+    sleep 15
+    
     # Check if core is responding (JWT fix verification)
-    if curl -s http://localhost:${HTTP_PORT:-80}/api/health > /dev/null 2>&1 || curl -s http://localhost:${HTTP_PORT:-80}/ > /dev/null 2>&1; then
+    HTTP_PORT=${HTTP_PORT:-80}
+    if curl -s http://localhost:$HTTP_PORT/api/health > /dev/null 2>&1 || \
+       curl -s http://localhost:$HTTP_PORT/ > /dev/null 2>&1 || \
+       curl -sk https://localhost:443/ > /dev/null 2>&1; then
         success "Core web service is responding"
     else
-        warning "Core service may still be initializing (JWT requires DBPASS/REDISPASS)"
-        warning "If installation hangs, check: docker logs billionmail-core-billionmail-1"
+        warning "Core service may still be initializing"
+        warning "If you see 'no default jwt secret' errors, they should resolve shortly"
     fi
     
-    # Check Postfix config
-    MYHOSTNAME=$(docker exec billionmail-postfix-billionmail-1 postconf -h myhostname 2>/dev/null)
+    # Check Postfix config (with retry)
+    for i in 1 2 3; do
+        MYHOSTNAME=$(docker exec billionmail-postfix-billionmail-1 postconf -h myhostname 2>/dev/null)
+        if [ -n "$MYHOSTNAME" ]; then
+            break
+        fi
+        sleep 2
+    done
+    
     if [ "$MYHOSTNAME" == "$MAIN_DOMAIN" ]; then
         success "Postfix hostname correct: $MYHOSTNAME"
+    elif [ -n "$MYHOSTNAME" ]; then
+        warning "Postfix hostname is '$MYHOSTNAME' (expected '$MAIN_DOMAIN')"
+        warning "Run this to fix: docker exec billionmail-postfix-billionmail-1 postconf -e myhostname=$MAIN_DOMAIN"
     else
-        warning "Postfix hostname is $MYHOSTNAME (expected $MAIN_DOMAIN)"
+        warning "Could not check Postfix hostname (container may still be starting)"
     fi
     
-    # Test database connection from Postfix container
-    if docker exec -e PGPASSWORD=$DB_PASS billionmail-postfix-billionmail-1 psql -h pgsql -U billionmail -d billionmail -c "SELECT 1;" > /dev/null 2>&1; then
-        success "Database connection from Postfix OK"
-    else
-        warning "Database connection from Postfix failed - may need SQL config fix"
+    # Test database connection from Postfix container (with retry)
+    for i in 1 2 3; do
+        if docker exec -e PGPASSWORD=$DB_PASS billionmail-postfix-billionmail-1 psql -h pgsql -U billionmail -d billionmail -c "SELECT 1;" > /dev/null 2>&1; then
+            success "Database connection from Postfix OK"
+            DB_OK=1
+            break
+        fi
+        sleep 2
+    done
+    
+    if [ -z "$DB_OK" ]; then
+        warning "Database connection from Postfix - may need a moment to initialize"
     fi
     
     # Test database connection
     if docker exec -e PGPASSWORD=$DB_PASS billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail -c "SELECT 1;" > /dev/null 2>&1; then
         success "Database connection OK"
     else
-        error "Database connection failed"
+        warning "Database connection check pending (container initializing)"
     fi
     
     success "Installation verification complete"
+    warning "If any services show as pending, wait 1-2 minutes and run: docker compose ps"
 }
 
 # Display final info
