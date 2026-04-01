@@ -392,7 +392,8 @@ run_install() {
     chmod +x install.sh
     
     # Run install in background and show progress
-    ./install.sh 2>&1 | tee install.log &
+    # Pipe 'yes' to auto-answer any prompts (like overwrite confirmation)
+    yes | ./install.sh 2>&1 | tee install.log &
     INSTALL_PID=$!
     
     # Show spinner
