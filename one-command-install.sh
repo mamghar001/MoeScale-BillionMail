@@ -1,5 +1,5 @@
 #!/bin/bash
-# One-Command Install for BillionMail MoeScale V5.0.0
+# One-Command Install for BillionMail MoeScale V5.0.0 (with Noez GRE Tunnel Support)
 # Usage: curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/moescale-fixed/one-command-install.sh | sudo bash
 # Or: sudo bash one-command-install.sh
 
@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Configuration
 BILLIONMAIL_DIR="/opt/billionmail"
 REPO_URL="https://github.com/mamghar001/MoeScale-BillionMail.git"
-BRANCH="MoeScale-V5.0.0"
+BRANCH="moescale-fixed"  # Updated to use the branch with Noez support
 
 # Logging
 log() {
@@ -176,6 +176,25 @@ gather_info() {
         read -p "Enter SMTP username: " RELAY_USER
         read -s -p "Enter SMTP password: " RELAY_PASS
         echo ""
+    fi
+    
+    # Noez GRE Tunnel option
+    echo ""
+    echo "==================================="
+    echo "Noez GRE Tunnel Setup (Optional)"
+    echo "For sending from dedicated Noez IP addresses via GRE tunnel."
+    echo "Requires: Noez account with GRE tunnel service"
+    echo ""
+    read -p "Set up Noez GRE Tunnel now? (yes/no) [no]: " SETUP_NOEZ
+    SETUP_NOEZ=${SETUP_NOEZ:-no}
+    
+    if [[ "$SETUP_NOEZ" == "yes" || "$SETUP_NOEZ" == "y" ]]; then
+        echo ""
+        echo "Enter Noez configuration:"
+        read -p "Noez IP address (e.g., 5.230.168.0): " NOEZ_IP
+        read -p "Noez GRE endpoint (from Noez panel, e.g., 5.230.205.35): " NOEZ_GRE_REMOTE
+        read -p "Cloudflare API token (optional, for auto-DNS): " CF_API_TOKEN
+        CF_API_TOKEN=${CF_API_TOKEN:-}
     fi
     
     # Generate secure passwords
@@ -354,6 +373,37 @@ EOF
     fi
 }
 
+# Setup Noez GRE Tunnel if requested
+setup_noez() {
+    if [[ "$SETUP_NOEZ" == "yes" || "$SETUP_NOEZ" == "y" ]]; then
+        log "Setting up Noez GRE Tunnel..."
+        
+        if [ ! -f "$BILLIONMAIL_DIR/noez_setup.sh" ]; then
+            warning "Noez setup script not found. Skipping Noez setup."
+            return
+        fi
+        
+        cd "$BILLIONMAIL_DIR"
+        
+        # Create noez_setup.env
+        cat > noez_setup.env << EOF
+# Noez GRE Tunnel Configuration
+NOEZ_IP="$NOEZ_IP"
+HOST_IP="$VPS_IP"
+NOEZ_GRE_REMOTE="$NOEZ_GRE_REMOTE"
+DOMAIN="$MAIN_DOMAIN"
+ALL_NOEZ_IPS="$NOEZ_IP"
+CF_API_TOKEN="$CF_API_TOKEN"
+EOF
+        
+        # Run Noez setup
+        log "Running Noez setup..."
+        bash noez_setup.sh || warning "Noez setup had some issues. Check logs above."
+        
+        success "Noez GRE Tunnel configured for IP: $NOEZ_IP"
+    fi
+}
+
 # Verify installation
 verify_install() {
     log "Verifying installation..."
@@ -423,12 +473,28 @@ show_info() {
         echo "   sudo bash $BILLIONMAIL_DIR/setup_smtp_relay.sh"
     fi
     
+    if [[ "$SETUP_NOEZ" == "yes" || "$SETUP_NOEZ" == "y" ]]; then
+        echo ""
+        echo "🌐 Noez GRE Tunnel: CONFIGURED"
+        echo "   IP: $NOEZ_IP"
+        echo "   Sending domain: $MAIN_DOMAIN"
+        echo "   Test: Send email from admin@$MAIN_DOMAIN"
+    fi
+    
     echo ""
     echo "📝 NEXT STEPS:"
     echo "1. Set up DNS records (A, MX, SPF, DKIM, DMARC)"
     echo "2. Add domains in BillionMail web UI"
     echo "3. Generate DKIM keys"
     echo "4. Test email delivery"
+    
+    if [[ "$SETUP_NOEZ" == "yes" || "$SETUP_NOEZ" == "y" ]]; then
+        echo ""
+        echo "📚 Noez Documentation:"
+        echo "   cat $BILLIONMAIL_DIR/NOEZ_SETUP.md"
+        echo "   cat $BILLIONMAIL_DIR/SKILLS.md (for AI agents)"
+    fi
+    
     echo ""
     echo "==================================="
 }
@@ -437,7 +503,7 @@ show_info() {
 main() {
     echo "==================================="
     echo "BillionMail MoeScale V5.0.0"
-    echo "One-Command Installer"
+    echo "One-Command Installer (with Noez Support)"
     echo "==================================="
     echo ""
     
@@ -450,6 +516,7 @@ main() {
     create_env
     run_install
     setup_smtp_relay
+    setup_noez
     verify_install
     show_info
 }
