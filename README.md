@@ -2,7 +2,7 @@
 
 > **🚀 ONE-COMMAND INSTALL (Recommended):**
 > ```bash
-> sudo curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/moescale-fixed/one-command-install.sh | sudo bash
+> bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/moescale-fixed/one-command-install.sh)
 > ```
 > This installs the latest working version with all fixes applied!
 
@@ -14,7 +14,7 @@
 
 ### Option 1: One-Command Install (Easiest)
 ```bash
-sudo curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/moescale-fixed/one-command-install.sh | sudo bash
+bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/moescale-fixed/one-command-install.sh)
 ```
 
 This script will:
