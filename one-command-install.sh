@@ -76,6 +76,22 @@ check_os() {
 install_dependencies() {
     log "Installing dependencies..."
     
+    # Fix any broken dependencies first
+    log "Checking for broken dependencies..."
+    apt --fix-broken install -y 2>/dev/null || true
+    
+    # Wait for apt lock to be released (max 60 seconds)
+    log "Waiting for package manager..."
+    for i in {1..60}; do
+        if ! lsof /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && ! lsof /var/lib/apt/lists/lock >/dev/null 2>&1; then
+            break
+        fi
+        echo -n "."
+        sleep 1
+    done
+    rm -f /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock 2>/dev/null || true
+    dpkg --configure -a 2>/dev/null || true
+    
     apt-get update -qq
     
     # Essential packages
