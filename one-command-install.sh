@@ -80,15 +80,47 @@ install_dependencies() {
     log "Checking for broken dependencies..."
     apt --fix-broken install -y 2>/dev/null || true
     
-    # Wait for apt lock to be released (max 60 seconds)
-    log "Waiting for package manager..."
-    for i in {1..60}; do
-        if ! lsof /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && ! lsof /var/lib/apt/lists/lock >/dev/null 2>&1; then
+    # Wait for apt lock to be released (fresh VPSes may be running cloud-init updates)
+    log "Waiting for package manager (this may take 2-3 minutes on fresh VPS)..."
+    LOCK_HELD=0
+    for i in {1..180}; do  # Wait up to 3 minutes
+        if ! lsof /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \
+           ! lsof /var/lib/apt/lists/lock >/dev/null 2>&1 && \
+           ! pgrep -x "apt-get" >/dev/null 2>&1; then
+            LOCK_HELD=0
             break
         fi
-        echo -n "."
+        LOCK_HELD=1
+        
+        # Show progress every 10 seconds
+        if [ $((i % 10)) -eq 0 ]; then
+            log "Still waiting... ($((i/10))/18)"
+            # Show what process is holding the lock
+            lsof /var/lib/dpkg/lock-frontend 2>/dev/null | tail -1 | awk '{print "  Lock held by:", $1, "(PID", $2")"}' || true
+        fi
         sleep 1
     done
+    
+    # If lock still held after 3 minutes, ask user or force kill
+    if [ "$LOCK_HELD" -eq 1 ]; then
+        warning "Package manager is still locked after 3 minutes"
+        warning "This is normal for fresh VPS cloud-init updates"
+        
+        read -p "Force kill apt processes and continue? (yes/no) [yes]: " FORCE_KILL
+        FORCE_KILL=${FORCE_KILL:-yes}
+        
+        if [[ "$FORCE_KILL" == "yes" || "$FORCE_KILL" == "y" ]]; then
+            log "Killing stale apt processes..."
+            pkill -9 apt-get 2>/dev/null || true
+            pkill -9 dpkg 2>/dev/null || true
+            sleep 2
+        else
+            error "Cannot proceed while package manager is locked. Please wait and try again."
+            exit 1
+        fi
+    fi
+    
+    # Clean up any stale locks
     rm -f /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock 2>/dev/null || true
     dpkg --configure -a 2>/dev/null || true
     
