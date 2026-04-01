@@ -346,9 +346,41 @@ fix_sql_configs() {
     success "SQL configs updated"
 }
 
+# Clean up old domain configs from previous installations
+cleanup_old_configs() {
+    log "Cleaning up old configuration files..."
+    
+    # Reset DKIM signing config to clean state (domains will be re-added via API)
+    if [ -f "conf/rspamd/local.d/dkim_signing.conf" ]; then
+        # Keep the header, remove all domain blocks
+        head -1 conf/rspamd/local.d/dkim_signing.conf > /tmp/dkim_signing.conf.tmp
+        cat >> /tmp/dkim_signing.conf.tmp << 'EOF'
+
+use_esld = false;
+
+domain {
+#BT_DOMAIN_DKIM_BEGIN
+
+}
+#BT_DOMAIN_DKIM_END
+EOF
+        mv /tmp/dkim_signing.conf.tmp conf/rspamd/local.d/dkim_signing.conf
+    fi
+    
+    # Clean up old vmail_ssl.map entries
+    if [ -f "conf/postfix/conf/vmail_ssl.map" ]; then
+        echo -n > conf/postfix/conf/vmail_ssl.map
+    fi
+    
+    success "Old configs cleaned up"
+}
+
 # Run install script
 run_install() {
     log "Running BillionMail install script..."
+    
+    # Clean up old configs from previous installations
+    cleanup_old_configs
     
     # Fix SQL configs before install
     fix_sql_configs
