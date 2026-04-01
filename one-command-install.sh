@@ -391,9 +391,39 @@ run_install() {
     
     chmod +x install.sh
     
+    # Remove existing config files to avoid overwrite prompts
+    rm -f billionmail.conf .env 2>/dev/null || true
+    
+    # Re-create .env file (install.sh uses it)
+    cat > .env << EOF
+DBUSER=billionmail
+DBNAME=billionmail
+DBPASS=$DB_PASS
+REDISPASS=$REDIS_PASS
+TZ=UTC
+BILLIONMAIL_HOSTNAME=$MAIN_DOMAIN
+ADMIN_USERNAME=$ADMIN_USER
+ADMIN_PASSWORD=$ADMIN_PASS
+SafePath=$SAFE_PATH
+IPV4_NETWORK=172.66.1
+HTTP_PORT=80
+HTTPS_PORT=443
+SMTP_PORT=25
+SMTPS_PORT=465
+SUBMISSION_PORT=587
+IMAP_PORT=143
+IMAPS_PORT=993
+POP_PORT=110
+POPS_PORT=995
+SQL_PORT=25432
+REDIS_PORT=26379
+RETENTION_DAYS=7
+FAIL2BAN_INIT=y
+IP_WHITELIST_ENABLE=false
+EOF
+    
     # Run install in background and show progress
-    # Pipe 'yes' to auto-answer any prompts (like overwrite confirmation)
-    yes | ./install.sh 2>&1 | tee install.log &
+    ./install.sh 2>&1 | tee install.log &
     INSTALL_PID=$!
     
     # Show spinner
