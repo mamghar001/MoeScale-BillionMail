@@ -30,6 +30,16 @@
 bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/main/one-command-install.sh)
 ```
 
+### 🏷️ Advanced: Install Specific Version or Branch
+If you need to target a specific release tag or development branch, you can pass the `BRANCH` environment variable:
+```bash
+# Example: Install v4.9.0
+BRANCH=v4.9.0 bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/main/one-command-install.sh)
+
+# Example: Install a development branch
+BRANCH=moescale-fixed bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/main/one-command-install.sh)
+```
+
 The script will:
 - Check system requirements (Ubuntu 20.04/22.04/24.04)
 - Install Docker & dependencies
