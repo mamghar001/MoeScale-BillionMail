@@ -245,10 +245,20 @@ gather_info() {
         CF_API_TOKEN=${CF_API_TOKEN:-}
     fi
     
-    # Generate secure passwords (alphanumeric only, no base64 padding)
+    # Load existing passwords if .env exists to prevent "split-brain" password mismatch on re-installs
+    if [ -f "$BILLIONMAIL_DIR/.env" ]; then
+        log "Loading existing passwords from .env..."
+        # Extract DBPASS and REDISPASS without sourcing the whole file (safer for shell)
+        EXT_DB_PASS=$(grep '^DBPASS=' "$BILLIONMAIL_DIR/.env" | cut -d'=' -f2)
+        EXT_REDIS_PASS=$(grep '^REDISPASS=' "$BILLIONMAIL_DIR/.env" | cut -d'=' -f2)
+        [ -n "$EXT_DB_PASS" ] && DB_PASS="$EXT_DB_PASS"
+        [ -n "$EXT_REDIS_PASS" ] && REDIS_PASS="$EXT_REDIS_PASS"
+    fi
+
+    # Generate secure passwords ONLY if they aren't already set/loaded
     # Note: Base64 passwords with == padding break DockerEnv which splits on =
-    DB_PASS=$(LC_ALL=C </dev/urandom tr -dc A-Za-z0-9 2>/dev/null | head -c 32)
-    REDIS_PASS=$(LC_ALL=C </dev/urandom tr -dc A-Za-z0-9 2>/dev/null | head -c 32)
+    [ -z "$DB_PASS" ] && DB_PASS=$(LC_ALL=C </dev/urandom tr -dc A-Za-z0-9 2>/dev/null | head -c 32)
+    [ -z "$REDIS_PASS" ] && REDIS_PASS=$(LC_ALL=C </dev/urandom tr -dc A-Za-z0-9 2>/dev/null | head -c 32)
     
     success "Configuration gathered"
 }
