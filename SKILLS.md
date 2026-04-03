@@ -665,6 +665,74 @@ iptables -I FORWARD -d $NOEZ_IP -j ACCEPT
 
 ---
 
+### Bug #7: Postfix Hostname 'localhost' Warning
+
+**Date Discovered:** 2026-04-03
+**Severity:** MEDIUM - Affects SMTP EHLO and causes installer warnings
+
+**Symptom:**
+```
+⚠️ Postfix hostname is 'localhost' (expected 'yourdomain.com')
+```
+
+**Root Cause:**
+The internal BillionMail installer resets `myhostname` in `conf/postfix/main.cf` to `localhost` or a generic value during initialization.
+
+**How to Detect:**
+```bash
+grep "^myhostname =" conf/postfix/main.cf
+```
+
+**Solution:**
+```bash
+# Update main.cf with the correct domain
+sed -i "s/^myhostname = .*/myhostname = yourdomain.com/" conf/postfix/main.cf
+
+# Restart Postfix
+docker restart billionmail-postfix-billionmail-1
+```
+
+**Code Fix Applied:**
+Added to `enforce_sql_passwords()` in the one-command installer to automatically align `myhostname` with `$MAIN_DOMAIN` during the final stabilization phase.
+
+---
+
+### Bug #8: Split-Brain Password Auth Failure (CRITICAL)
+
+**Date Discovered:** 2026-04-03
+**Severity:** CRITICAL - All SMTP sending fails
+
+**Symptom:**
+```
+Postfix logs show:
+"FATAL: password authentication failed for user 'billionmail'"
+"451 4.3.0 <recipient>: Temporary lookup failure"
+```
+
+**Root Cause:**
+The BillionMail internal installer overwrites some Postfix SQL map files (e.g., `pgsql_sender_transport_maps.cf`) with hardcoded or mismatched passwords, while others retain the correct `.env` password. This creates a "split-brain" state where only some lookups fail.
+
+**How to Detect:**
+```bash
+grep "^password =" conf/postfix/sql/pgsql_*.cf
+# Compare if all passwords match the DBPASS in your .env file
+```
+
+**Solution:**
+```bash
+# Force-sync ALL SQL map files
+DBPASS=$(grep '^DBPASS=' .env | cut -d'=' -f2)
+find conf/postfix/sql/ -name 'pgsql_*.cf' -exec sed -i "s/^password = .*/password = $DBPASS/" {} +
+
+# Restart Postfix
+docker restart billionmail-postfix-billionmail-1
+```
+
+**Code Fix Applied:**
+Implemented a `Final Stabilization` sweep in `one-command-install.sh` that iterates through ALL Postfix and Groupware SQL configuration files to enforce password consistency before finishing the installation.
+
+---
+
 ## 7. TROUBLESHOOTING DECISION TREES
 
 ### Email Not Sending
@@ -1143,8 +1211,8 @@ docker exec -i billionmail-postfix-billionmail-1 psql -U billionmail -d billionm
 
 ---
 
-**Document Version:** 2.0 (Comprehensive)  
-**Last Updated:** 2026-03-31  
+**Document Version:** 3.0 (Stabilized)  
+**Last Updated:** 2026-04-03  
 **Author:** AI Agent Knowledge Preservation  
 **Purpose:** Enable any AI agent to understand and fix this system
 
