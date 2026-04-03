@@ -602,31 +602,61 @@ EOF
     success "Old configs cleaned up"
 }
 
-# Wait for Postgres to be ready
+# Wait for Postgres to be ready and schema initialized
 wait_for_db() {
-    log "Waiting for PostgreSQL to be ready..."
-    local MAX_RETRIES=30
+    log "Waiting for PostgreSQL to be ready and initialized..."
+    local MAX_RETRIES=45
     local RETRY_COUNT=0
     while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        # Check if pg_isready
         if docker exec billionmail-pgsql-billionmail-1 pg_isready -U billionmail -d billionmail >/dev/null 2>&1; then
-            success "PostgreSQL is ready"
-            return 0
+            # Now check if the mailbox table exists
+            if docker exec -e PGPASSWORD=$DBPASS billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail -c "SELECT 1 FROM mailbox LIMIT 1" >/dev/null 2>&1; then
+                success "PostgreSQL is ready and schema initialized"
+                return 0
+            fi
         fi
         RETRY_COUNT=$((RETRY_COUNT + 1))
+        # After 15 tries (30 sec), try to manually push the init.sql if tables are still missing
+        if [ $RETRY_COUNT -eq 15 ]; then
+            warning "Initialization taking longer than expected. Attempting manual schema push..."
+            docker exec -i billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail < init.sql >/dev/null 2>&1 || true
+        fi
         sleep 2
     done
-    error "PostgreSQL failed to become ready in time"
+    error "PostgreSQL failed to initialize in time"
     return 1
+}
+
+# Thoroughly enforce SQL passwords across all config files
+enforce_sql_passwords() {
+    log "Enforcing SQL passwords across configurations..."
+    # 1. Postfix SQL maps
+    if [ -d "conf/postfix/sql" ]; then
+        for f in conf/postfix/sql/pgsql_*.cf; do
+            if [ -f "$f" ]; then
+                sed -i "s/^password = .*/password = $DBPASS/" "$f"
+                # Ensure it uses the right host too (some scripts might use 127.0.0.1)
+                sed -i "s/^hosts = .*/hosts = pgsql/" "$f"
+            fi
+        done
+    fi
+    # 2. Dovecot SQL
+    if [ -f "conf/dovecot/conf.d/dovecot-sql.conf.ext" ]; then
+        sed -i "s/password=[^ ]*/password=$DBPASS/" conf/dovecot/conf.d/dovecot-sql.conf.ext
+        sed -i "s/host=[^ ]*/host=pgsql/" conf/dovecot/conf.d/dovecot-sql.conf.ext
+    fi
+    success "Passwords synchronized in all mail configs"
 }
 
 # Run install script
 run_install() {
     log "Running BillionMail install script..."
     
-    # Clean up old configs from previous installations
+    # 1. Primary cleanup
     cleanup_old_configs
     
-    # Fix SQL configs before install
+    # 2. Initial SQL setup 
     fix_sql_configs
     
     # Fix Postfix myhostname to match domain (for PTR record alignment)
@@ -682,32 +712,26 @@ EOF
     
     wait $INSTALL_PID
     if [ $? -eq 0 ]; then
-        success "BillionMail installed successfully"
+        success "BillionMail core installation finished"
     else
         error "Installation failed. Check install.log"
         exit 1
     fi
     
-    # Wait for database to be fully up before finishing config
+    # --- FINALIZATION START ---
+    log "Performing final stabilization..."
+    
+    # 3. Wait for database to be fully initialized (Crucial!)
     wait_for_db
     
-    # Final check: Ensure tables exist (they might have been missed if Postgres was slow)
-    log "Verifying database tables..."
-    if ! docker exec -e PGPASSWORD=$DBPASS billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail -c "SELECT 1 FROM mailbox LIMIT 1" >/dev/null 2>&1; then
-        warning "Mailbox table missing. Re-running initialization..."
-        # Re-run the internal initialization if needed (or we can manually push the schema)
-        # For now, we assume wait_for_db and the restart help.
-    fi
-
-    # Re-apply SQL password fix AFTER install.sh runs, because install.sh regenerates
-    # some config files (pgsql_sender_relay_maps.cf, pgsql_sender_transport_maps.cf)
-    # with hardcoded 'billionmail123' passwords, overwriting our earlier fix.
-    log "Re-syncing SQL passwords post-install..."
-    fix_sql_configs
+    # 4. Final Aggressive Password Enforcement (Catch any overwrites by install.sh)
+    enforce_sql_passwords
     
-    # Restart postfix to pick up corrected SQL configs
-    docker compose restart postfix-billionmail >/dev/null 2>&1 || true
-    success "SQL configs synchronized - postfix restarted"
+    # 5. Restart Mail components to catch new configs
+    log "Restarting mail components..."
+    docker compose restart postfix-billionmail dovecot-billionmail >/dev/null 2>&1 || true
+    
+    success "Final stabilization complete"
 }
 
 # Setup SMTP relay if requested
