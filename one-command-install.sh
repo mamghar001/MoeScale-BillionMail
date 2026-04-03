@@ -657,6 +657,16 @@ EOF
         error "Installation failed. Check install.log"
         exit 1
     fi
+    
+    # Re-apply SQL password fix AFTER install.sh runs, because install.sh regenerates
+    # some config files (pgsql_sender_relay_maps.cf, pgsql_sender_transport_maps.cf)
+    # with hardcoded 'billionmail123' passwords, overwriting our earlier fix.
+    log "Re-syncing SQL passwords post-install..."
+    fix_sql_configs
+    
+    # Restart postfix to pick up corrected SQL configs
+    docker compose restart postfix-billionmail >/dev/null 2>&1 || true
+    success "SQL configs synchronized - postfix restarted"
 }
 
 # Setup SMTP relay if requested
