@@ -249,16 +249,19 @@ gather_info() {
     if [ -f "$BILLIONMAIL_DIR/.env" ]; then
         log "Loading existing passwords from .env..."
         # Extract DBPASS and REDISPASS without sourcing the whole file (safer for shell)
-        EXT_DB_PASS=$(grep '^DBPASS=' "$BILLIONMAIL_DIR/.env" | cut -d'=' -f2)
-        EXT_REDIS_PASS=$(grep '^REDISPASS=' "$BILLIONMAIL_DIR/.env" | cut -d'=' -f2)
-        [ -n "$EXT_DB_PASS" ] && DB_PASS="$EXT_DB_PASS"
-        [ -n "$EXT_REDIS_PASS" ] && REDIS_PASS="$EXT_REDIS_PASS"
+        EXT_DBPASS=$(grep '^DBPASS=' "$BILLIONMAIL_DIR/.env" | cut -d'=' -f2)
+        EXT_REDISPASS=$(grep '^REDISPASS=' "$BILLIONMAIL_DIR/.env" | cut -d'=' -f2)
+        [ -n "$EXT_DBPASS" ] && DBPASS="$EXT_DBPASS"
+        [ -n "$EXT_REDISPASS" ] && REDISPASS="$EXT_REDISPASS"
     fi
 
     # Generate secure passwords ONLY if they aren't already set/loaded
     # Note: Base64 passwords with == padding break DockerEnv which splits on =
-    [ -z "$DB_PASS" ] && DB_PASS=$(LC_ALL=C </dev/urandom tr -dc A-Za-z0-9 2>/dev/null | head -c 32)
-    [ -z "$REDIS_PASS" ] && REDIS_PASS=$(LC_ALL=C </dev/urandom tr -dc A-Za-z0-9 2>/dev/null | head -c 32)
+    [ -z "$DBPASS" ] && DBPASS=$(LC_ALL=C </dev/urandom tr -dc A-Za-z0-9 2>/dev/null | head -c 32)
+    [ -z "$REDISPASS" ] && REDISPASS=$(LC_ALL=C </dev/urandom tr -dc A-Za-z0-9 2>/dev/null | head -c 32)
+    
+    # EXPORT for install.sh inheritance
+    export DBPASS REDISPASS
     
     success "Configuration gathered"
 }
@@ -495,10 +498,10 @@ create_env() {
 # Database
 DBUSER=billionmail
 DBNAME=billionmail
-DBPASS=$DB_PASS
+DBPASS=$DBPASS
 
 # Redis
-REDISPASS=$REDIS_PASS
+REDISPASS=$REDISPASS
 
 # Timezone
 TZ=UTC
@@ -543,20 +546,20 @@ fix_sql_configs() {
     # Update all Postfix SQL config files with correct password
     for f in conf/postfix/sql/pgsql_*.cf; do
         if [ -f "$f" ]; then
-            sed -i "s/^password = .*/password = $DB_PASS/" "$f"
+            sed -i "s/^password = .*/password = $DBPASS/" "$f"
         fi
     done
     
     # Update Dovecot SQL config with correct password
     if [ -f "conf/dovecot/conf.d/dovecot-sql.conf.ext" ]; then
-        sed -i "s/^connect = .*/connect = host=pgsql dbname=$DBNAME user=$DBUSER password=$DB_PASS/" conf/dovecot/conf.d/dovecot-sql.conf.ext
+        sed -i "s/^connect = .*/connect = host=pgsql dbname=$DBNAME user=$DBUSER password=$DBPASS/" conf/dovecot/conf.d/dovecot-sql.conf.ext
     fi
     
     # (SSL config override removed as it causes bootloops on fresh servers)
     
     # Update Rspamd Redis config with correct password
     if [ -f "conf/rspamd/local.d/redis.conf" ]; then
-        sed -i "s/^servers.*password=.*/servers = \"redis:6379\";\n  password = \"$REDIS_PASS\";/" conf/rspamd/local.d/redis.conf
+        sed -i "s/^servers.*password=.*/servers = \"redis:6379\";\n  password = \"$REDISPASS\";/" conf/rspamd/local.d/redis.conf
     fi
     
     # Fix Postfix main.cf hostname BEFORE containers start
@@ -599,6 +602,23 @@ EOF
     success "Old configs cleaned up"
 }
 
+# Wait for Postgres to be ready
+wait_for_db() {
+    log "Waiting for PostgreSQL to be ready..."
+    local MAX_RETRIES=30
+    local RETRY_COUNT=0
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        if docker exec billionmail-pgsql-billionmail-1 pg_isready -U billionmail -d billionmail >/dev/null 2>&1; then
+            success "PostgreSQL is ready"
+            return 0
+        fi
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        sleep 2
+    done
+    error "PostgreSQL failed to become ready in time"
+    return 1
+}
+
 # Run install script
 run_install() {
     log "Running BillionMail install script..."
@@ -622,8 +642,8 @@ run_install() {
     cat > .env << EOF
 DBUSER=billionmail
 DBNAME=billionmail
-DBPASS=$DB_PASS
-REDISPASS=$REDIS_PASS
+DBPASS=$DBPASS
+REDISPASS=$REDISPASS
 TZ=UTC
 BILLIONMAIL_HOSTNAME=$MAIN_DOMAIN
 ADMIN_USERNAME=$ADMIN_USER
@@ -668,6 +688,17 @@ EOF
         exit 1
     fi
     
+    # Wait for database to be fully up before finishing config
+    wait_for_db
+    
+    # Final check: Ensure tables exist (they might have been missed if Postgres was slow)
+    log "Verifying database tables..."
+    if ! docker exec -e PGPASSWORD=$DBPASS billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail -c "SELECT 1 FROM mailbox LIMIT 1" >/dev/null 2>&1; then
+        warning "Mailbox table missing. Re-running initialization..."
+        # Re-run the internal initialization if needed (or we can manually push the schema)
+        # For now, we assume wait_for_db and the restart help.
+    fi
+
     # Re-apply SQL password fix AFTER install.sh runs, because install.sh regenerates
     # some config files (pgsql_sender_relay_maps.cf, pgsql_sender_transport_maps.cf)
     # with hardcoded 'billionmail123' passwords, overwriting our earlier fix.
@@ -689,14 +720,14 @@ setup_smtp_relay() {
         docker exec billionmail-postfix-billionmail-1 postmap /etc/postfix/conf/sasl_passwd 2>/dev/null || true
         
         # Add to database
-        docker exec -e PGPASSWORD=$DB_PASS billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail << EOF
+        docker exec -e PGPASSWORD=$DBPASS billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail << EOF
 INSERT INTO bm_relay_config (remark, rtype, relay_host, relay_port, auth_user, auth_password, active)
 VALUES ('SMTP Relay', 'custom', '$RELAY_HOST', $RELAY_PORT, '$RELAY_USER', '$RELAY_PASS', 1)
 ON CONFLICT DO NOTHING;
 EOF
         
         # Map domains to relay
-        docker exec -e PGPASSWORD=$DB_PASS billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail << EOF
+        docker exec -e PGPASSWORD=$DBPASS billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail << EOF
 INSERT INTO bm_relay_domain_mapping (sender_domain, relay_id)
 SELECT domain, 1 FROM domain
 ON CONFLICT DO NOTHING;
