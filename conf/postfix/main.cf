@@ -76,9 +76,7 @@ message_size_limit = 102400000
 ## Do not delete the following identification configuration
 # Overrides-configuration #
 
-myhostname = b2bscale.xyz
-smtp_helo_name = mail.b2bscale.xyz
-smtp_bind_address = 85.121.241.250
+
 
 recipient_bcc_maps = hash:/etc/postfix/conf/recipient_bcc
 
