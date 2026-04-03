@@ -1,6 +1,6 @@
 #!/bin/bash
 # One-Command Install for BillionMail MoeScale V5.0.0 (with Noez GRE Tunnel Support)
-# Usage: curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/moescale-fixed/one-command-install.sh | sudo bash
+# Usage: bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/v4.9.0/one-command-install.sh)
 # Or: sudo bash one-command-install.sh
 
 set -e
@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Configuration
 BILLIONMAIL_DIR="/opt/billionmail"
 REPO_URL="https://github.com/mamghar001/MoeScale-BillionMail.git"
-BRANCH="moescale-fixed"  # Updated to use the branch with Noez support
+BRANCH="v4.9.0"  # Stable release tag
 
 # Logging
 log() {
