@@ -542,12 +542,7 @@ fix_sql_configs() {
         sed -i "s/^connect = .*/connect = host=pgsql dbname=$DBNAME user=$DBUSER password=$DB_PASS/" conf/dovecot/conf.d/dovecot-sql.conf.ext
     fi
     
-    # Update Dovecot SSL config to use correct domain
-    if [ -f "conf/dovecot/conf.d/10-ssl.conf" ]; then
-        # Replace any existing mail.* domain with mail.$MAIN_DOMAIN
-        sed -i "s/mail\.[^.]*\.[^.]*{/mail.$MAIN_DOMAIN {/g" conf/dovecot/conf.d/10-ssl.conf
-        sed -i "s|/mail\.[^/]*/|/mail.$MAIN_DOMAIN/|g" conf/dovecot/conf.d/10-ssl.conf
-    fi
+    # (SSL config override removed as it causes bootloops on fresh servers)
     
     # Update Rspamd Redis config with correct password
     if [ -f "conf/rspamd/local.d/redis.conf" ]; then

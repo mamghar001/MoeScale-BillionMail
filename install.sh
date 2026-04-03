@@ -1365,7 +1365,7 @@ EOF
         ls -al
         Red_Error "docker-compose.yml not found."
     fi
-    ${DOCKER_COMPOSE} pull
+    ${DOCKER_COMPOSE} pull --ignore-pull-failures || true
     # Fix for unprivileged postfix container mounting data folder as root
     mkdir -p postfix-data
     chown -R 101:102 postfix-data 2>/dev/null || true
