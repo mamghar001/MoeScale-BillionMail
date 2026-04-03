@@ -2,7 +2,7 @@
 
 > **🚀 ONE-COMMAND INSTALL:**
 > ```bash
-> bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/v4.9.0/one-command-install.sh)
+> bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/main/one-command-install.sh)
 > ```
 
 ---
@@ -27,7 +27,7 @@
 
 ### One-Command Install (Recommended)
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/v4.9.0/one-command-install.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/main/one-command-install.sh)
 ```
 
 The script will:
@@ -67,7 +67,7 @@ You only need to provide:
 
 ### 3. Install
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/v4.9.0/one-command-install.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/mamghar001/MoeScale-BillionMail/main/one-command-install.sh)
 ```
 
 ### 4. Post-install
