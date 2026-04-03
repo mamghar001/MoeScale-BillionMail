@@ -628,9 +628,9 @@ wait_for_db() {
     return 1
 }
 
-# Thoroughly enforce SQL passwords across all config files
+# Thoroughly enforce SQL passwords and hostname across all config files
 enforce_sql_passwords() {
-    log "Enforcing SQL passwords across configurations..."
+    log "Enforcing configuration alignment..."
     # 1. Postfix SQL maps
     if [ -d "conf/postfix/sql" ]; then
         for f in conf/postfix/sql/pgsql_*.cf; do
@@ -646,7 +646,11 @@ enforce_sql_passwords() {
         sed -i "s/password=[^ ]*/password=$DBPASS/" conf/dovecot/conf.d/dovecot-sql.conf.ext
         sed -i "s/host=[^ ]*/host=pgsql/" conf/dovecot/conf.d/dovecot-sql.conf.ext
     fi
-    success "Passwords synchronized in all mail configs"
+    # 3. Postfix main.cf (Enforce correct hostname)
+    if [ -f "conf/postfix/main.cf" ]; then
+        sed -i "s/^myhostname = .*/myhostname = $MAIN_DOMAIN/" conf/postfix/main.cf
+    fi
+    success "Passwords and hostname synchronized in all configs"
 }
 
 # Run install script
