@@ -722,20 +722,7 @@ EOF
         exit 1
     fi
     
-    # --- FINALIZATION START ---
-    log "Performing final stabilization..."
-    
-    # 3. Wait for database to be fully initialized (Crucial!)
-    wait_for_db
-    
-    # 4. Final Aggressive Password Enforcement (Catch any overwrites by install.sh)
-    enforce_sql_passwords
-    
-    # 5. Restart Mail components to catch new configs
-    log "Restarting mail components..."
-    docker compose restart postfix-billionmail dovecot-billionmail >/dev/null 2>&1 || true
-    
-    success "Final stabilization complete"
+    success "BillionMail core installation finished"
 }
 
 # Setup SMTP relay if requested
@@ -963,6 +950,16 @@ main() {
     setup_smtp_relay
     setup_noez
     verify_install
+    
+    # --- FINAL STABILIZATION SWEEP ---
+    log "Performing intermediate configuration alignment..."
+    wait_for_db
+    sleep 5
+    enforce_sql_passwords
+    
+    log "Final mail service refresh..."
+    docker compose restart postfix-billionmail dovecot-billionmail >/dev/null 2>&1 || true
+    
     show_info
 }
 
