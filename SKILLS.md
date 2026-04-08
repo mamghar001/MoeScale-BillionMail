@@ -733,6 +733,223 @@ Implemented a `Final Stabilization` sweep in `one-command-install.sh` that itera
 
 ---
 
+### Bug #9: SQL Schema Mismatch - bm_multi_ip_domain (CRITICAL)
+
+**Date Discovered:** 2026-04-08
+**Severity:** CRITICAL - Domains not showing IPs in dashboard
+
+**Symptom:**
+```
+- IPs not showing in BillionMail domain dashboard
+- Domain appears in UI but without IP assignment
+- Emails bounce or fail to send
+- Script runs without error but domain setup incomplete
+```
+
+**Root Cause:**
+BillionMail v4.9.0 changed `bm_multi_ip_domain` table schema from 3 columns to 12 columns:
+
+**OLD Schema (v4.8.x and earlier):**
+```sql
+domain | ip | in_use
+```
+
+**NEW Schema (v4.9.0+):**
+```sql
+domain | outbound_ip | network_name | subnet | postfix_ip | aliases | smtp_server_name | active | create_time | update_time | status
+```
+
+**How to Detect:**
+```bash
+# Check table schema
+docker exec -i billionmail-postfix-billionmail-1 psql -U billionmail -d billionmail -c "\d bm_multi_ip_domain"
+
+# Check if insert failed silently
+docker exec -i billionmail-postfix-billionmail-1 psql -U billionmail -d billionmail -c "SELECT * FROM bm_multi_ip_domain WHERE domain='yourdomain.com'"
+```
+
+**Solution:**
+```bash
+# Use correct SQL with all 12 columns
+docker exec -i billionmail-postfix-billionmail-1 psql -U billionmail -d billionmail -c \
+    "INSERT INTO bm_multi_ip_domain (domain, outbound_ip, network_name, subnet, postfix_ip, aliases, smtp_server_name, active, create_time, update_time, status) 
+     VALUES ('domain.com', '5.230.168.X', 'noez', '5.230.0.0/16', '5.230.168.X', '', 'mail', 1, $(date +%s), $(date +%s), 'active') 
+     ON CONFLICT (domain, outbound_ip) DO UPDATE SET 
+        outbound_ip='5.230.168.X', 
+        postfix_ip='5.230.168.X',
+        network_name='noez',
+        subnet='5.230.0.0/16',
+        update_time=$(date +%s), 
+        status='active';"
+```
+
+**Code Fix Applied:**
+Modified `add_domain_to_billionmail()` in `noez_setup.sh` to use the new 12-column schema with proper `ON CONFLICT` clause.
+
+---
+
+### Bug #10: Double DKIM Signatures - Invalid DKIM (CRITICAL)
+
+**Date Discovered:** 2026-04-08
+**Severity:** CRITICAL - DKIM validation fails
+
+**Symptom:**
+```
+Mail-tester shows:
+"DKIM_INVALID - DKIM or DK signature exists, but is not valid"
+"You have more than one DKIM signature in your message"
+
+DKIM checks show TWO signatures:
+- d=growthwithai.store; s=default
+- d=growthwithai.store; s=short
+```
+
+**Root Cause:**
+BillionMail generates TWO DKIM selectors by default:
+- `default` - Full 2048-bit key (392 characters)
+- `short` - Shorter key for compatibility
+
+When both are configured in `dkim_signing.conf`, rspamd signs with BOTH, but DNS only has one record. The extra signature fails validation.
+
+**How to Detect:**
+```bash
+# Check how many selectors per domain
+cat conf/rspamd/local.d/dkim_signing.conf | grep -A10 "yourdomain.com"
+
+# If you see TWO "path:" entries under selectors[], that's the problem
+```
+
+**Solution:**
+```bash
+# Edit dkim_signing.conf and remove the "short" selector
+# Keep only "default" selector for each domain
+
+# Or programmatically remove short selectors:
+sed -i '/path: ".*short.private";/,/selector: "short";/d' conf/rspamd/local.d/dkim_signing.conf
+
+# Restart rspamd
+docker restart billionmail-rspamd-billionmail-1
+```
+
+**Code Fix Applied:**
+Modified rspamd `dkim_signing.conf` to only use `default` selector (removed all `short` entries).
+
+---
+
+### Bug #11: Truncated DKIM Keys in DNS (CRITICAL)
+
+**Date Discovered:** 2026-04-08
+**Severity:** CRITICAL - DKIM validation fails
+
+**Symptom:**
+```
+Mail-tester shows:
+"DKIM_INVALID - DKIM or DK signature exists, but is not valid"
+
+DNS record shows partial key:
+"v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxtTFjoAJqCJs7O8HhW+YjWia0bkgR/jhuc8q3tJV6XeXzj+bS9jH442BlYfi20ZTsnc8wq6zfWBGcmXxvJtfyELF9DEA50O5enp2Wano3SVBJVjqX8CtacSacfE4CTMDmqfQ4l3PSXhZWtN5sOkoXDOTxxGDsHQ4C7pwW31PuRSqPIJAsAw7T41jh6GmvPbe3"
+```
+
+**Root Cause:**
+DKIM public keys in rspamd are stored in multi-line format (split across lines for DNS record formatting). The extraction function only grabbed the first line.
+
+**DKIM Key File Format:**
+```
+default._domainkey IN TXT ( "v=DKIM1; k=rsa; "
+	"p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxtTFjoAJqCJs7O8HhW+YjWia0bkgR/jhuc8q3tJV6XeXzj+bS9jH442BlYfi20ZTsnc8wq6zfWBGcmXxvJtfyELF9DEA50O5enp2Wano3SVBJVjqX8CtacSacfE4CTMDmqfQ4l3PSXhZWtN5sOkoXDOTxxGDsHQ4C7pwW31PuRSqPIJAsAw7T41jh6GmvPbe3"
+	"n4TPcwsd2F3FMRMj"
+) ;
+```
+
+The old extraction only got:
+- `MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxtTFjoAJqCJs7O8HhW+YjWia0bkgR/jhuc8q3tJV6XeXzj+bS9jH442BlYfi20ZTsnc8wq6zfWBGcmXxvJtfyELF9DEA50O5enp2Wano3SVBJVjqX8CtacSacfE4CTMDmqfQ4l3PSXhZWtN5sOkoXDOTxxGDsHQ4C7pwW31PuRSqPIJAsAw7T41jh6GmvPbe3` (253 chars)
+
+Should be:
+- `MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxtTFjoAJqCJs7O8HhW+YjWia0bkgR/jhuc8q3tJV6XeXzj+bS9jH442BlYfi20ZTsnc8wq6zfWBGcmXxvJtfyELF9DEA50O5enp2Wano3SVBJVjqX8CtacSacfE4CTMDmqfQ4l3PSXhZWtN5sOkoXDOTxxGDsHQ4C7pwW31PuRSqPIJAsAw7T41jh6GmvPbe3n4TPcwsd2F3FMRMj` (392 chars)
+
+**How to Detect:**
+```bash
+# Check DKIM key length
+docker exec billionmail-rspamd-billionmail-1 cat /var/lib/rspamd/dkim/yourdomain.com/default.pub | grep -o 'p=[^"]*' | sed 's/p=//' | tr -d '\n' | wc -c
+# Should be 392 characters
+# If 253, it's truncated!
+```
+
+**Solution:**
+```bash
+# Use Python to extract full multi-line key
+docker exec billionmail-rspamd-billionmail-1 cat /var/lib/rspamd/dkim/yourdomain.com/default.pub | python3 -c '
+import sys, re
+content = sys.stdin.read()
+key_parts = []
+lines = content.split("\n")
+capturing = False
+for line in lines:
+    line = line.strip()
+    if "p=" in line:
+        capturing = True
+        match = re.search(r"p=([^\"]+)\"", line)
+        if match:
+            key_parts.append(match.group(1))
+    elif capturing and line.startswith("\"") and not line.startswith("\"v="):
+        match = re.search(r"\"([^\"]+)\"", line)
+        if match:
+            key_parts.append(match.group(1))
+    elif capturing and (")" in line or line.endswith(");")):
+        break
+print("".join(key_parts))
+'
+```
+
+**Code Fix Applied:**
+Rewrote `get_dkim_public_key()` function in `noez_setup.sh` to use Python for proper multi-line DKIM key extraction.
+
+---
+
+### Bug #12: Incomplete DNS Record Cleanup
+
+**Date Discovered:** 2026-04-08
+**Severity:** MEDIUM - Duplicate/conflicting DNS records
+
+**Symptom:**
+```
+- Multiple A records for mail.domain.com
+- Multiple SPF records causing validation issues
+- Old DKIM records conflicting with new ones
+```
+
+**Root Cause:**
+Original `setup_cloudflare_dns()` function only updated records (PUT) if they existed, or created new ones. It didn't delete old records first, leading to duplicates when:
+- Changing VPS IP
+- Updating SPF IP ranges
+- Re-adding domains
+
+**Solution:**
+```bash
+# For each record type, DELETE ALL existing before creating new:
+
+# 1. Delete ALL old A records
+records=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=mail.$DOMAIN" ...)
+echo "$records" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['id']) for r in d.get('result', [])]" | while read id; do
+    curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$id" ...
+done
+
+# 2. Create fresh A record
+curl -s -X POST "..." -d '{"type":"A","name":"mail.'$DOMAIN'","content":"'$HOST_IP'"...'
+
+# Repeat for SPF, DMARC, DKIM
+```
+
+**Code Fix Applied:**
+Modified `setup_cloudflare_dns()` in `noez_setup.sh` to:
+1. Delete ALL existing A records for mail.$DOMAIN
+2. Delete ALL existing SPF records for $DOMAIN
+3. Delete ALL existing DMARC records for _dmarc.$DOMAIN
+4. Delete ALL existing DKIM records for default._domainkey.$DOMAIN
+5. Then create fresh records
+
+---
+
 ## 7. TROUBLESHOOTING DECISION TREES
 
 ### Email Not Sending
@@ -1184,6 +1401,36 @@ docker exec -i billionmail-postfix-billionmail-1 psql -U billionmail -d billionm
 **Cause:** `postfix reload` doesn't pick up master.cf changes  
 **Solution:** Must use `docker restart` or full postfix stop/start
 
+### Pitfall #9: BillionMail v4.9.0 Schema Changes
+
+**Problem:** Script fails silently, domains don't show IPs in dashboard  
+**Cause:** BillionMail v4.9.0 changed `bm_multi_ip_domain` from 3 columns to 12 columns  
+**Old SQL:** `INSERT INTO bm_multi_ip_domain (domain, ip, in_use)`  
+**New SQL:** `INSERT INTO bm_multi_ip_domain (domain, outbound_ip, network_name, subnet, postfix_ip, aliases, smtp_server_name, active, create_time, update_time, status)`  
+**Fix:** See Bug #9 for complete new SQL syntax  
+**Detection:** Check if IPs appear in dashboard after running script
+
+### Pitfall #10: Double DKIM Signatures
+
+**Problem:** DKIM validation fails with "more than one DKIM signature"  
+**Cause:** rspamd configured with both `default` and `short` selectors  
+**Fix:** Remove `short` selector from `dkim_signing.conf`, keep only `default`  
+**Detection:** Check mail-tester.com for multiple DKIM signatures
+
+### Pitfall #11: Truncated DKIM Keys in DNS
+
+**Problem:** DKIM validation fails even with correct selector  
+**Cause:** DKIM extraction only got first line of multi-line key (253 chars instead of 392)  
+**Fix:** Use Python-based extraction to concatenate all lines  
+**Detection:** Count characters in DNS DKIM record - should be 392, not 253
+
+### Pitfall #12: Not Cleaning DNS Records Before Update
+
+**Problem:** Multiple/conflicting DNS records  
+**Cause:** Script updates records in-place instead of deleting and recreating  
+**Fix:** Delete ALL existing records of each type before creating new ones  
+**Applies to:** A records, SPF, DMARC, DKIM
+
 ---
 
 ## APPENDIX A: File Modification History
@@ -1195,10 +1442,24 @@ docker exec -i billionmail-postfix-billionmail-1 psql -U billionmail -d billionm
 | 2026-03-30 | noez_setup.sh | Add host routing fix | AI Agent |
 | 2026-03-30 | setup_noez_ips.sh | Add auto-detection | AI Agent |
 | 2026-03-31 | SKILLS.md | Create knowledge base | AI Agent |
+| 2026-04-08 | noez_setup.sh | Fix SQL schema for v4.9.0 compatibility | AI Agent |
+| 2026-04-08 | noez_setup.sh | Add proper DKIM handling | AI Agent |
+| 2026-04-08 | SKILLS.md | Document Bugs #9-12 | AI Agent |
 
 ---
 
-## APPENDIX B: External Dependencies
+## APPENDIX B: Version Compatibility Matrix
+
+| BillionMail Version | noez_setup.sh Version | Notes |
+|---------------------|----------------------|-------|
+| v4.8.x and earlier | Before 2026-04-08 | Uses 3-column bm_multi_ip_domain |
+| v4.9.0+ | 2026-04-08+ | Uses 12-column bm_multi_ip_domain, proper DKIM handling |
+
+**CRITICAL:** If upgrading BillionMail from v4.8.x to v4.9.0+, you MUST update noez_setup.sh to the latest version!
+
+---
+
+## APPENDIX C: External Dependencies
 
 - Noez GRE tunnel service
 - Cloudflare account (optional but recommended)
@@ -1211,8 +1472,8 @@ docker exec -i billionmail-postfix-billionmail-1 psql -U billionmail -d billionm
 
 ---
 
-**Document Version:** 3.0 (Stabilized)  
-**Last Updated:** 2026-04-03  
+**Document Version:** 4.0 (v4.9.0 Compatible)  
+**Last Updated:** 2026-04-08  
 **Author:** AI Agent Knowledge Preservation  
 **Purpose:** Enable any AI agent to understand and fix this system
 
@@ -1225,5 +1486,9 @@ This system works when:
 2. Container binds to those IPs
 3. Postfix uses correct source IP
 4. Host forwards replies to container (NOT local!)
+5. **NEW:** SQL schema matches BillionMail version (12 columns for v4.9.0+)
+6. **NEW:** DKIM keys are complete (392 chars) and single selector only
 
 The #1 mistake is forgetting #4 - always check `ip route show table local` and ensure Noez IPs are NOT there!
+
+The #2 mistake (v4.9.0+) is using old SQL schema - always check table structure before INSERT!
