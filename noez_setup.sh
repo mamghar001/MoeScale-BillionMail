@@ -365,6 +365,35 @@ get_cf_record_id() {
         -H "Content-Type: application/json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['result'][0]['id'])" 2>/dev/null
 }
 
+# Get DKIM public key from rspamd container
+get_dkim_public_key() {
+    local domain="$1"
+    local selector="${2:-default}"
+    
+    # Use Python to extract the full DKIM key reliably from multi-line format
+    docker exec billionmail-rspamd-billionmail-1 cat "/var/lib/rspamd/dkim/$domain/$selector.pub" 2>/dev/null | python3 -c '
+import sys, re
+content = sys.stdin.read()
+key_parts = []
+lines = content.split("\n")
+capturing = False
+for line in lines:
+    line = line.strip()
+    if "p=" in line:
+        capturing = True
+        match = re.search(r"p=([^\"]+)\"", line)
+        if match:
+            key_parts.append(match.group(1))
+    elif capturing and line.startswith("\"") and not line.startswith("\"v="):
+        match = re.search(r"\"([^\"]+)\"", line)
+        if match:
+            key_parts.append(match.group(1))
+    elif capturing and (")" in line or line.endswith(");")):
+        break
+print("".join(key_parts))
+'
+}
+
 # Setup Cloudflare DNS records
 setup_cloudflare_dns() {
     local DOMAIN_TO_SETUP="$1"
@@ -391,7 +420,21 @@ setup_cloudflare_dns() {
         fi
     fi
     
-    # Delete old SPF records
+    # Delete ALL old A records for mail subdomain (there should be only one)
+    print_info "Cleaning up old A records for mail.$DOMAIN_TO_SETUP..."
+    local existing_a_records=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?type=A&name=mail.$DOMAIN_TO_SETUP" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json")
+    
+    echo "$existing_a_records" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['id']) for r in d.get('result', [])]" 2>/dev/null | while read record_id; do
+        if [ -n "$record_id" ]; then
+            curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records/$record_id" \
+                -H "Authorization: Bearer $CF_API_TOKEN" \
+                -H "Content-Type: application/json" > /dev/null 2>&1
+        fi
+    done
+    
+    # Delete ALL old SPF records (there should be only one)
     print_info "Cleaning up old SPF records..."
     local existing_spf=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?type=TXT&name=$DOMAIN_TO_SETUP" \
         -H "Authorization: Bearer $CF_API_TOKEN" \
@@ -405,7 +448,7 @@ setup_cloudflare_dns() {
         fi
     done
     
-    # Delete old DMARC records
+    # Delete ALL old DMARC records (there should be only one)
     print_info "Cleaning up old DMARC records..."
     local existing_dmarc=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?type=TXT&name=_dmarc.$DOMAIN_TO_SETUP" \
         -H "Authorization: Bearer $CF_API_TOKEN" \
@@ -419,23 +462,27 @@ setup_cloudflare_dns() {
         fi
     done
     
+    # Delete ALL old DKIM records (default selector)
+    print_info "Cleaning up old DKIM records..."
+    local existing_dkim=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?type=TXT&name=default._domainkey.$DOMAIN_TO_SETUP" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json")
+    
+    echo "$existing_dkim" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['id']) for r in d.get('result', [])]" 2>/dev/null | while read record_id; do
+        if [ -n "$record_id" ]; then
+            curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records/$record_id" \
+                -H "Authorization: Bearer $CF_API_TOKEN" \
+                -H "Content-Type: application/json" > /dev/null 2>&1
+        fi
+    done
+    
     # Create A record
     print_info "Setting up A record: mail.$DOMAIN_TO_SETUP -> $HOST_IP"
-    local existing_a_id=$(get_cf_record_id "$CF_ZONE_ID" "mail.$DOMAIN_TO_SETUP" "A")
-    
-    if [ -n "$existing_a_id" ]; then
-        curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records/$existing_a_id" \
-            -H "Authorization: Bearer $CF_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"type\":\"A\",\"name\":\"mail.$DOMAIN_TO_SETUP\",\"content\":\"$HOST_IP\",\"ttl\":120,\"proxied\":false}" > /dev/null 2>&1
-        print_status "✓ A record updated"
-    else
-        curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
-            -H "Authorization: Bearer $CF_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"type\":\"A\",\"name\":\"mail.$DOMAIN_TO_SETUP\",\"content\":\"$HOST_IP\",\"ttl\":120,\"proxied\":false}" > /dev/null 2>&1
-        print_status "✓ A record created"
-    fi
+    curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"type\":\"A\",\"name\":\"mail.$DOMAIN_TO_SETUP\",\"content\":\"$HOST_IP\",\"ttl\":120,\"proxied\":false}" > /dev/null 2>&1
+    print_status "✓ A record created: mail.$DOMAIN_TO_SETUP -> $HOST_IP"
     
     # Create SPF record
     print_info "Creating SPF TXT record..."
@@ -454,6 +501,22 @@ setup_cloudflare_dns() {
         -H "Content-Type: application/json" \
         -d "{\"type\":\"TXT\",\"name\":\"_dmarc.$DOMAIN_TO_SETUP\",\"content\":\"$dmarc_content\",\"ttl\":120}" > /dev/null 2>&1
     print_status "✓ DMARC record created"
+    
+    # Create DKIM record
+    print_info "Creating DKIM TXT record (selector: default)..."
+    local dkim_key=$(get_dkim_public_key "$DOMAIN_TO_SETUP" "default")
+    
+    if [ -n "$dkim_key" ]; then
+        local dkim_content="v=DKIM1; k=rsa; p=$dkim_key"
+        # Truncate if too long (Cloudflare has limits, but DKIM keys are long)
+        curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"type\":\"TXT\",\"name\":\"default._domainkey.$DOMAIN_TO_SETUP\",\"content\":\"$dkim_content\",\"ttl\":120}" > /dev/null 2>&1
+        print_status "✓ DKIM record created (selector: default)"
+    else
+        print_warning "DKIM key not found for $DOMAIN_TO_SETUP - you may need to generate it in BillionMail dashboard first"
+    fi
     
     print_status "Cloudflare DNS setup complete!"
 }
@@ -484,10 +547,17 @@ add_domain_to_billionmail() {
     
     # Also add to bm_multi_ip_domain for UI display
     print_info "Configuring multi-IP domain for UI display..."
+    local current_time=$(date +%s)
     docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -c \
-        "INSERT INTO bm_multi_ip_domain (domain, ip, in_use) 
-         VALUES ('$DOMAIN_TO_ADD', '$NOEZ_IP', 1) 
-         ON CONFLICT (domain) DO UPDATE SET ip='$NOEZ_IP', in_use=1;" 2>/dev/null
+        "INSERT INTO bm_multi_ip_domain (domain, outbound_ip, network_name, subnet, postfix_ip, aliases, smtp_server_name, active, create_time, update_time, status) 
+         VALUES ('$DOMAIN_TO_ADD', '$NOEZ_IP', 'noez', '5.230.0.0/16', '$NOEZ_IP', '', 'mail', 1, $current_time, $current_time, 'active') 
+         ON CONFLICT (domain, outbound_ip) DO UPDATE SET 
+            outbound_ip='$NOEZ_IP', 
+            postfix_ip='$NOEZ_IP',
+            network_name='noez',
+            subnet='5.230.0.0/16',
+            update_time=$current_time, 
+            status='active';" 2>/dev/null
     print_status "✓ Multi-IP domain configured"
     
     # Setup Cloudflare DNS
