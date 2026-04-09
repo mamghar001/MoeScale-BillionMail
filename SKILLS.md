@@ -14,12 +14,13 @@
 4. [Configuration Deep Dive](#4-configuration-deep-dive)
 5. [Complete Setup Process](#5-complete-setup-process)
 6. [ALL Bugs & Solutions (Chronological)](#6-all-bugs--solutions-chronological)
-7. [Troubleshooting Decision Trees](#7-troubleshooting-decision-trees)
-8. [Emergency Recovery Procedures](#8-emergency-recovery-procedures)
-9. [Testing & Verification](#9-testing--verification)
-10. [Integration Points](#10-integration-points)
-11. [Command Reference](#11-command-reference)
-12. [Common Pitfalls](#12-common-pitfalls)
+7. [Mailbox Creation Tool](#7-mailbox-creation-tool)
+8. [Troubleshooting Decision Trees](#8-troubleshooting-decision-trees)
+9. [Emergency Recovery Procedures](#9-emergency-recovery-procedures)
+10. [Testing & Verification](#10-testing--verification)
+11. [Integration Points](#11-integration-points)
+12. [Command Reference](#12-command-reference)
+13. [Common Pitfalls](#13-common-pitfalls)
 
 ---
 
@@ -993,8 +994,80 @@ Modified `add_domain_to_billionmail()` in `noez_setup.sh` to:
 
 This ensures blacklist checks validate the correct dedicated Noez IP.
 
+### Bug #14: Mailbox Default Limit Too Low (50)
+
+**Date Discovered:** 2026-04-08
+**Severity:** LOW - UI shows 50, need 100+ mailboxes per domain
+
+**Symptom:**
+```
+- Domain form shows "Mailboxes: 50" by default
+- Need 100 mailboxes per domain for email campaigns
+```
+
+**Root Cause:**
+Default value in API and frontend was set to 50.
+
+**Solution:**
+Updated defaults from 50 to 101 in:
+- `core/api/domains/v1/domains.go` - API default
+- `core/frontend/src/views/domain/components/DomainForm.vue` - Frontend default
+- `core/internal/service/database_initialization/mail_serv.go` - Schema default
+
+Also updated all existing domains:
+```sql
+UPDATE domain SET mailboxes = 101;
+```
+
 ---
-## 7. TROUBLESHOOTING DECISION TREES
+
+## 7. MAILBOX CREATION TOOL
+
+### create_100_mailboxes.py
+
+**Purpose:** Automatically create 100 mailboxes with USA women's names for any domain
+
+**Location:** `/opt/create_100_mailboxes.py` (also copied to `/opt/billionmail/`)
+
+**Features:**
+- Creates 100 unique mailboxes: `firstname.lastname@domain.com`
+- Uses USA white women's names (100 first names + 100 last names)
+- Display names in Camel Case: "Firstname Lastname"
+- Generates random 12-character passwords with special chars
+- Reads API token from `.env` file (`BM_API_TOKEN`)
+- Saves results to `mailboxes/` folder
+
+**Usage:**
+```bash
+# Interactive mode (asks for confirmation)
+python3 create_100_mailboxes.py b2bgrowth.store
+
+# Automated mode (no confirmation)
+python3 create_100_mailboxes.py b2bgrowth.store --skip-confirm
+```
+
+**Output Files:**
+- `mailboxes/mailboxes_<domain>.csv` - Email, Password, Full Name
+- `mailboxes/failed_mailboxes_<domain>.log` - Any failures (if any)
+
+**Integration with noez_setup.sh:**
+When running `noez_setup.sh add <IP> <domain>`, the script now asks:
+```
+Create 100 mailboxes for <domain>? (y/n)
+```
+If yes, automatically creates mailboxes after domain setup.
+
+**Prerequisites:**
+1. API token must be set in `.env`:
+   ```
+   BM_API_TOKEN=eyJhbGciOiJIUzI1NiIs...
+   BM_API_URL=https://mail.moescale.site
+   ```
+2. Python 3 with `requests` module
+
+---
+
+## 8. TROUBLESHOOTING DECISION TREES
 
 ### Email Not Sending
 

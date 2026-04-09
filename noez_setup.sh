@@ -795,6 +795,36 @@ add_new_ip() {
     setup_postfix
     test_connectivity
     
+    # Create 100 mailboxes for the new domain
+    print_section "Creating 100 Mailboxes for $NEW_DOMAIN"
+    print_info "This will create 100 mailboxes with USA women's names"
+    print_info "Format: firstname.lastname@$NEW_DOMAIN"
+    print_info ""
+    
+    # Check if Python script exists
+    MAILBOX_SCRIPT="/opt/create_100_mailboxes.py"
+    if [ -f "$MAILBOX_SCRIPT" ]; then
+        # Ask user if they want to create mailboxes
+        read -p "Create 100 mailboxes for $NEW_DOMAIN? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Starting mailbox creation..."
+            python3 "$MAILBOX_SCRIPT" "$NEW_DOMAIN" --skip-confirm
+            if [ $? -eq 0 ]; then
+                print_status "✓ Mailboxes created successfully!"
+                print_info "Check mailboxes/mailboxes_${NEW_DOMAIN//./_}.csv for credentials"
+            else
+                print_warning "Some mailboxes may have failed. Check the logs."
+            fi
+        else
+            print_info "Skipping mailbox creation"
+            print_info "You can create them later with: python3 $MAILBOX_SCRIPT $NEW_DOMAIN"
+        fi
+    else
+        print_warning "Mailbox creation script not found at $MAILBOX_SCRIPT"
+        print_info "You can create mailboxes manually later"
+    fi
+    
     # Restore original values
     NOEZ_IP="$ORIG_NOEZ_IP"
     DOMAIN="$ORIG_DOMAIN"
