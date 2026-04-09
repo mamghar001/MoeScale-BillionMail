@@ -533,16 +533,21 @@ add_domain_to_billionmail() {
     
     if [ "$domain_exists" == "1" ]; then
         print_status "Domain $DOMAIN_TO_ADD already exists in BillionMail"
+        # Update A record to the Noez IP for blacklist checking
+        print_info "Updating A record to Noez IP for blacklist checking..."
+        docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -c \
+            "UPDATE domain SET a_record='$NOEZ_IP' WHERE domain='$DOMAIN_TO_ADD';" 2>/dev/null
+        print_status "✓ A record updated to $NOEZ_IP"
     else
         print_info "Adding domain directly to database..."
         local current_time=$(date +%s)
         
         docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -c \
             "INSERT INTO domain (domain, a_record, mailboxes, mailbox_quota, quota, rate_limit, create_time, active, urls, hasbrandinfo, current_usage) 
-             VALUES ('$DOMAIN_TO_ADD', '', 50, 5368709120, 10737418240, 12, $current_time, 1, '{}', 0, 0) 
-             ON CONFLICT (domain) DO NOTHING;" 2>/dev/null
+             VALUES ('$DOMAIN_TO_ADD', '$NOEZ_IP', 50, 5368709120, 10737418240, 12, $current_time, 1, '{}', 0, 0) 
+             ON CONFLICT (domain) DO UPDATE SET a_record='$NOEZ_IP';" 2>/dev/null
         
-        print_status "✓ Domain added to BillionMail"
+        print_status "✓ Domain added to BillionMail with A record: $NOEZ_IP"
     fi
     
     # Also add to bm_multi_ip_domain for UI display
