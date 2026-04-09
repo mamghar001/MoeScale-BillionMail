@@ -950,6 +950,50 @@ Modified `setup_cloudflare_dns()` in `noez_setup.sh` to:
 
 ---
 
+
+### Bug #13: Missing A Record for Blacklist Checking
+
+**Date Discovered:** 2026-04-08
+**Severity:** MEDIUM - Blacklist check fails
+
+**Symptom:**
+```
+- Clicking "Check Blacklist" on domain shows "The ARecord field is required"
+- Or checks wrong IP (VPS IP instead of Noez IP)
+- Domain table shows empty a_record field
+```
+
+**Root Cause:**
+The `domain` table has an `a_record` field that BillionMail uses for:
+1. Blacklist checking (what IP to check)
+2. DNS validation
+
+When adding domains via script, this field was left empty.
+
+**How to Detect:**
+```bash
+# Check if A record is set
+docker exec -i billionmail-postfix-billionmail-1 psql -U billionmail -d billionmail -c "
+SELECT domain, a_record FROM domain WHERE a_record = '' OR a_record IS NULL;
+"
+```
+
+**Solution:**
+```bash
+# Set A record to Noez IP for blacklist checking
+docker exec -i billionmail-postfix-billionmail-1 psql -U billionmail -d billionmail -c "
+UPDATE domain SET a_record='$NOEZ_IP' WHERE domain='yourdomain.com';
+"
+```
+
+**Code Fix Applied:**
+Modified `add_domain_to_billionmail()` in `noez_setup.sh` to:
+1. Set `a_record` to `$NOEZ_IP` when inserting new domain
+2. Update `a_record` to `$NOEZ_IP` when domain already exists
+
+This ensures blacklist checks validate the correct dedicated Noez IP.
+
+---
 ## 7. TROUBLESHOOTING DECISION TREES
 
 ### Email Not Sending
