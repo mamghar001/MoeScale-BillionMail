@@ -544,7 +544,7 @@ add_domain_to_billionmail() {
         
         docker exec -i $CONTAINER_NAME psql -U billionmail -d billionmail -c \
             "INSERT INTO domain (domain, a_record, mailboxes, mailbox_quota, quota, rate_limit, create_time, active, urls, hasbrandinfo, current_usage) 
-             VALUES ('$DOMAIN_TO_ADD', '$NOEZ_IP', 50, 5368709120, 10737418240, 12, $current_time, 1, '{}', 0, 0) 
+             VALUES ('$DOMAIN_TO_ADD', '$NOEZ_IP', 101, 5368709120, 10737418240, 12, $current_time, 1, '{}', 0, 0) 
              ON CONFLICT (domain) DO UPDATE SET a_record='$NOEZ_IP';" 2>/dev/null
         
         print_status "✓ Domain added to BillionMail with A record: $NOEZ_IP"
