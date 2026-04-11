@@ -4,7 +4,7 @@
 # Debian specific:  Specifying a file name will cause the first
 # line of that file to be used as the name.  The Debian default
 # is /etc/mailname.
-#myorigin = /etc/mailname
+myorigin = moescale.site
 
 smtpd_banner = $myhostname ESMTP $mail_name 
 biff = no
@@ -48,7 +48,7 @@ mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
 mailbox_size_limit = 0
 recipient_delimiter = +
 inet_interfaces = all
-inet_protocols = all
+inet_protocols = ipv4
 
 # Sql configuration
 virtual_mailbox_domains = pgsql:/etc/postfix/sql/pgsql_virtual_domains_maps.cf
@@ -82,3 +82,7 @@ recipient_bcc_maps = hash:/etc/postfix/conf/recipient_bcc
 
 # sender_dependent_relayhost_maps = pgsql:/etc/postfix/sql/pgsql_sender_relay_maps.cf
 sender_dependent_default_transport_maps = pgsql:/etc/postfix/sql/pgsql_sender_transport_maps.cf
+
+
+# User Overrides-configuration
+myhostname = moescale.site
