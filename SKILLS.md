@@ -21,6 +21,7 @@
 11. [Integration Points](#11-integration-points)
 12. [Command Reference](#12-command-reference)
 13. [Common Pitfalls](#13-common-pitfalls)
+14. [Noez Blacklist Fix Deep Dive](./NOEZ_BLACKLIST_FIX.md)
 
 ---
 
@@ -993,6 +994,8 @@ Modified `add_domain_to_billionmail()` in `noez_setup.sh` to:
 2. Update `a_record` to `$NOEZ_IP` when domain already exists
 
 This ensures blacklist checks validate the correct dedicated Noez IP.
+
+> **🔄 v4.9.2 Update:** After applying the initial Bug #13 fix (setting `a_record` to a Noez IP), three new issues emerged: (1) the API validation rejected IPs, (2) `CheckBlacklist` tried to DNS-resolve the IP string causing "resolve failed", and (3) `FormatMX` displayed the IP as a hostname in DNS records. These were fixed in `v4.9.2`. See the full technical breakdown in [`NOEZ_BLACKLIST_FIX.md`](./NOEZ_BLACKLIST_FIX.md).
 
 ### Bug #14: Mailbox Default Limit Too Low (50)
 
