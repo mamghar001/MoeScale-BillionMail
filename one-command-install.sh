@@ -960,6 +960,12 @@ main() {
     log "Final mail service refresh..."
     docker compose restart postfix-billionmail dovecot-billionmail >/dev/null 2>&1 || true
     
+    # Immediate fix for any existing SQL config mismatches
+    bash fix_db_password_missmatch.sh
+    
+    # Delayed background fix for files the core app creates asynchronously after container startup
+    (sleep 30 && cd /opt/billionmail && bash fix_db_password_missmatch.sh) &
+    
     show_info
 }
 
