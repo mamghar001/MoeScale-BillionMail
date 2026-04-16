@@ -394,6 +394,73 @@ print("".join(key_parts))
 '
 }
 
+# Generate DKIM keys for a domain (default + short) inside the rspamd container
+generate_dkim_keys() {
+    local domain="$1"
+    local dkim_dir="/opt/billionmail/rspamd-data/dkim/$domain"
+    local conf_file="/opt/billionmail/conf/rspamd/local.d/dkim_signing.conf"
+    
+    print_info "Ensuring DKIM keys exist for $domain..."
+    
+    # Generate keys inside the rspamd container if they don't exist on host
+    if [ ! -f "$dkim_dir/default.private" ] || [ ! -f "$dkim_dir/short.private" ]; then
+        docker exec billionmail-rspamd-billionmail-1 bash -c "
+            mkdir -p /var/lib/rspamd/dkim/$domain
+            if [ ! -f /var/lib/rspamd/dkim/$domain/default.private ]; then
+                rspamadm dkim_keygen -s default -b 2048 -d $domain -k /var/lib/rspamd/dkim/$domain/default.private > /var/lib/rspamd/dkim/$domain/default.pub
+            fi
+            if [ ! -f /var/lib/rspamd/dkim/$domain/short.private ]; then
+                rspamadm dkim_keygen -s short -b 1024 -d $domain -k /var/lib/rspamd/dkim/$domain/short.private > /var/lib/rspamd/dkim/$domain/short.pub
+            fi
+            chmod 644 /var/lib/rspamd/dkim/$domain/*.private
+        "
+        print_status "✓ DKIM keys generated for $domain"
+    else
+        print_status "DKIM keys already exist for $domain"
+    fi
+    
+    # Ensure dkim_signing.conf exists with proper skeleton
+    if [ ! -f "$conf_file" ]; then
+        cat > "$conf_file" << 'EOF'
+sign_headers = "from:sender:reply-to:subject:date:message-id:to:cc:mime-version:content-type:content-transfer-encoding:content-language:resent-to:resent-cc:resent-from:resent-sender:resent-message-id:in-reply-to:references:list-id:list-help:list-owner:list-unsubscribe:list-subscribe:list-post:list-unsubscribe-post:disposition-notification-to:disposition-notification-options:original-recipient:openpgp:autocrypt";
+
+use_esld = false;
+
+domain {
+#BT_DOMAIN_DKIM_BEGIN
+#BT_DOMAIN_DKIM_END
+}
+EOF
+    fi
+    
+    # Add domain block to dkim_signing.conf if missing
+    if ! grep -q "${domain}_DKIM_BEGIN" "$conf_file"; then
+        local dkim_block_file="/tmp/${domain}_dkim_block.txt"
+        cat > "$dkim_block_file" << INNER_EOF
+#${domain}_DKIM_BEGIN
+${domain} {
+   selectors [
+    {
+      path: "/var/lib/rspamd/dkim/${domain}/default.private";
+      selector: "default";
+    },
+    {
+      path: "/var/lib/rspamd/dkim/${domain}/short.private";
+      selector: "short";
+    }
+  ]
+}
+#${domain}_DKIM_END
+INNER_EOF
+        sed -i "/^#BT_DOMAIN_DKIM_BEGIN$/r $dkim_block_file" "$conf_file"
+        rm -f "$dkim_block_file"
+        print_status "✓ DKIM config added to dkim_signing.conf for $domain"
+        
+        # Reload rspamd to pick up new config
+        docker exec billionmail-rspamd-billionmail-1 rspamadm control reload >/dev/null 2>&1 || true
+    fi
+}
+
 # Setup Cloudflare DNS records
 setup_cloudflare_dns() {
     local DOMAIN_TO_SETUP="$1"
@@ -564,6 +631,9 @@ add_domain_to_billionmail() {
             update_time=$current_time, 
             status='active';" 2>/dev/null
     print_status "✓ Multi-IP domain configured"
+    
+    # Generate DKIM keys locally so Cloudflare DNS can publish them
+    generate_dkim_keys "$DOMAIN_TO_ADD"
     
     # Setup Cloudflare DNS
     setup_cloudflare_dns "$DOMAIN_TO_ADD"
