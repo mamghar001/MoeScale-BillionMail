@@ -2659,7 +2659,11 @@ func FormatMX(domain string) string {
 	val, err := g.DB().Model("domain").Where("domain", domain).WhereOr("a_record", domain).Value("a_record")
 
 	if err == nil && !val.IsEmpty() {
-		return val.String()
+		// a_record may contain a Noez IP for blacklist checking (Bug #13 fix).
+		// Do not use an IP address as the hostname/MX target.
+		if net.ParseIP(val.String()) == nil {
+			return val.String()
+		}
 	}
 
 	return "mail." + strings.TrimPrefix(domain, "mail.")

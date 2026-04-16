@@ -717,6 +717,9 @@ EOF
         print_warning "Postfix restart failed"
     }
     
+    # Restore Noez IPs to container loopback after restart wipes them
+    bash /opt/billionmail/setup_noez_ips.sh >/dev/null 2>&1
+    
     print_status "Postfix configured!"
 }
 
