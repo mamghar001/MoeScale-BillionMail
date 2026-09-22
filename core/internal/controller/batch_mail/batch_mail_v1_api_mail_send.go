@@ -4,10 +4,11 @@ import (
 	"billionmail-core/api/batch_mail/v1"
 	"billionmail-core/internal/model/entity"
 	"billionmail-core/internal/service/contact"
-	"billionmail-core/internal/service/mail_service"
 	"billionmail-core/internal/service/public"
+	"billionmail-core/internal/service/rbac"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,39 +16,232 @@ import (
 
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/util/grand"
+	"github.com/gogf/gf/v2/util/guid"
 )
+
+// parseRecipients parses and deduplicates recipient email addresses from string and list inputs.
+// Supports comma, semicolon, space, newline, and carriage return delimiters.
+func parseRecipients(recipientStr string, recipientList []string) []string {
+	var rawList []string
+	if len(recipientList) > 0 {
+		rawList = append(rawList, recipientList...)
+	}
+	if recipientStr != "" {
+		replacer := strings.NewReplacer(";", ",", "\n", ",", "\r", ",", "\t", ",", " ", ",")
+		normalized := replacer.Replace(recipientStr)
+		parts := strings.Split(normalized, ",")
+		rawList = append(rawList, parts...)
+	}
+
+	seen := make(map[string]bool)
+	var result []string
+	for _, item := range rawList {
+		email := strings.ToLower(strings.TrimSpace(item))
+		if email != "" && strings.Contains(email, "@") && !seen[email] {
+			seen[email] = true
+			result = append(result, email)
+		}
+	}
+	return result
+}
+
+// generateMessageId produces a unique RFC-compliant Message-ID string.
+func generateMessageId(addresser string) string {
+	domainPart := "billionmail"
+	parts := strings.SplitN(addresser, "@", 2)
+	if len(parts) > 1 && parts[1] != "" {
+		domainPart = parts[1]
+	}
+	randomBytes := grand.B(16)
+	randomID := hex.EncodeToString(randomBytes)
+	timestampMillis := time.Now().UnixMilli()
+	return fmt.Sprintf("%d.%s@%s", timestampMillis, randomID, domainPart)
+}
+
+// getOrCreateApiTemplate gets or initializes an api_templates entity for a specific templateId.
+func getOrCreateApiTemplate(ctx context.Context, templateId int, addresser string) (*entity.ApiTemplates, error) {
+	var tpl entity.ApiTemplates
+	err := g.DB().Model("api_templates").Where("template_id", templateId).Where("active", 1).Order("id asc").Limit(1).Scan(&tpl)
+	if err == nil && tpl.Id > 0 {
+		return &tpl, nil
+	}
+
+	// Verify template exists in email_templates
+	emailTpl, err := getEmailTemplateById(ctx, templateId)
+	if err != nil {
+		return nil, gerror.New(public.LangCtx(ctx, "Email template does not exist"))
+	}
+
+	now := int(time.Now().Unix())
+	newKey := guid.S() + guid.S()
+	if len(newKey) > 64 {
+		newKey = newKey[:64]
+	}
+	addr := addresser
+	if addr == "" {
+		addr = "all_replies@b2bprosperity.com"
+	}
+	subj := emailTpl.TempName
+	if subj == "" {
+		subj = "API Campaign"
+	}
+	insertRes, err := g.DB().Model("api_templates").Insert(g.Map{
+		"api_key":              newKey,
+		"api_name":             fmt.Sprintf("API Template %d", templateId),
+		"template_id":          templateId,
+		"subject":              subj,
+		"addresser":            addr,
+		"full_name":            "",
+		"unsubscribe":          0,
+		"track_open":           1,
+		"track_click":          1,
+		"active":               1,
+		"create_time":          now,
+		"update_time":          now,
+		"expire_time":          0,
+		"last_key_update_time": now,
+		"group_id":             0,
+	})
+	if err != nil {
+		return nil, gerror.New(public.LangCtx(ctx, "Failed to create API template: {}", err.Error()))
+	}
+	newId, _ := insertRes.LastInsertId()
+	tpl.Id = int(newId)
+	tpl.ApiKey = newKey
+	tpl.ApiName = fmt.Sprintf("API Template %d", templateId)
+	tpl.TemplateId = templateId
+	tpl.Subject = subj
+	tpl.Addresser = addr
+	tpl.Active = 1
+	return &tpl, nil
+}
+
+// resolveApiTemplate authenticates the request using either the Master Admin API Token
+// (Bearer token in Authorization header or x-api-key) or a template-specific API key.
+func resolveApiTemplate(ctx context.Context, apiKeyHeader, authHeader string, reqTemplateId int, reqAddresser string, clientIP string) (*entity.ApiTemplates, bool, error) {
+	r := g.RequestFromCtx(ctx)
+
+	// 1. Extract token/key from all potential sources
+	token := strings.TrimSpace(apiKeyHeader)
+	if token == "" {
+		token = strings.TrimSpace(authHeader)
+	}
+	if token == "" && r != nil {
+		token = strings.TrimSpace(r.GetHeader("x-api-key"))
+		if token == "" {
+			token = strings.TrimSpace(r.GetHeader("Authorization"))
+		}
+		if token == "" {
+			token = strings.TrimSpace(r.Get("api_key").String())
+		}
+		if token == "" {
+			token = strings.TrimSpace(r.Get("x-api-key").String())
+		}
+		if token == "" {
+			token = strings.TrimSpace(r.Get("token").String())
+		}
+	}
+
+	token = strings.TrimPrefix(token, "Bearer ")
+	token = strings.TrimSpace(token)
+
+	if token == "" {
+		return nil, false, gerror.New(public.LangCtx(ctx, "API key or Authorization token is required"))
+	}
+
+	// 2. Check direct match in api_templates table
+	var apiTemplate entity.ApiTemplates
+	err := g.DB().Model("api_templates").Where("api_key", token).Where("active", 1).Scan(&apiTemplate)
+	if err == nil && apiTemplate.Id > 0 {
+		if reqTemplateId > 0 && reqTemplateId != apiTemplate.TemplateId {
+			overrideTpl, err := getOrCreateApiTemplate(ctx, reqTemplateId, reqAddresser)
+			if err == nil && overrideTpl != nil {
+				return overrideTpl, false, nil
+			}
+		}
+		return &apiTemplate, false, nil
+	}
+
+	// 3. Check JWT token (Master Admin API Token or Admin Session Token)
+	claims, err := rbac.JWT().ParseToken(token)
+	if err == nil && claims != nil {
+		isAdmin := claims.ApiToken || claims.Username == "admin"
+		if !isAdmin {
+			for _, role := range claims.Roles {
+				if role == "admin" {
+					isAdmin = true
+					break
+				}
+			}
+		}
+
+		if !isAdmin {
+			return nil, false, gerror.New(public.LangCtx(ctx, "Unauthorized: token does not have admin permissions"))
+		}
+
+		// Valid Master Admin API Token!
+		if reqTemplateId > 0 {
+			tpl, err := getOrCreateApiTemplate(ctx, reqTemplateId, reqAddresser)
+			if err != nil {
+				return nil, true, err
+			}
+			return tpl, true, nil
+		}
+
+		// No template_id specified; pick primary active api_template
+		var defaultTpl entity.ApiTemplates
+		err = g.DB().Model("api_templates").Where("active", 1).Order("id asc").Limit(1).Scan(&defaultTpl)
+		if err == nil && defaultTpl.Id > 0 {
+			return &defaultTpl, true, nil
+		}
+
+		// Fallback to first available email_template
+		var emailTpl entity.EmailTemplate
+		err = g.DB().Model("email_templates").Order("id asc").Limit(1).Scan(&emailTpl)
+		if err != nil || emailTpl.Id == 0 {
+			return nil, true, gerror.New(public.LangCtx(ctx, "No email templates found in system"))
+		}
+
+		tpl, err := getOrCreateApiTemplate(ctx, emailTpl.Id, reqAddresser)
+		if err != nil {
+			return nil, true, err
+		}
+		return tpl, true, nil
+	}
+
+	return nil, false, gerror.New(public.LangCtx(ctx, "API key or token is invalid"))
+}
+
+// getApiTemplateByKey provides backward compatibility for looking up an API template
+func getApiTemplateByKey(ctx context.Context, apiKey string, clientIP string) (*entity.ApiTemplates, error) {
+	tpl, _, err := resolveApiTemplate(ctx, apiKey, "", 0, "", clientIP)
+	return tpl, err
+}
 
 func (c *ControllerV1) ApiMailSend(ctx context.Context, req *v1.ApiMailSendReq) (res *v1.ApiMailSendRes, err error) {
 	res = &v1.ApiMailSendRes{}
 	clientIP := g.RequestFromCtx(ctx).GetClientIp()
-	// 1. check API Key
-	apiTemplate, err := getApiTemplateByKey(ctx, req.ApiKey, clientIP)
+
+	// 1. Resolve API Template & Authenticate (Master Admin API Token or Template API Key)
+	apiTemplate, isAdminToken, err := resolveApiTemplate(ctx, req.ApiKey, req.Authorization, req.TemplateId, req.Addresser, clientIP)
 	if err != nil {
 		res.Code = 1001
 		res.SetError(gerror.New(public.LangCtx(ctx, err.Error())))
 		return res, nil
 	}
 
-	// check client IP
-	err = CheckClientIP(ctx, apiTemplate.Id, clientIP)
-	if err != nil {
-		res.Code = 1002
-		res.SetError(gerror.New(public.LangCtx(ctx, err.Error())))
-		return res, nil
+	// 2. Check client IP (only enforce if not Master Admin token)
+	if !isAdminToken {
+		err = CheckClientIP(ctx, apiTemplate.Id, clientIP)
+		if err != nil {
+			res.Code = 1002
+			res.SetError(gerror.New(public.LangCtx(ctx, err.Error())))
+			return res, nil
+		}
 	}
 
-	//var expireAt int64
-	//if apiTemplate.ExpireTime > 0 {
-	//	expireAt = int64(apiTemplate.LastKeyUpdateTime) + int64(apiTemplate.ExpireTime)
-	//	if time.Now().Unix() > expireAt {
-	//		// expired
-	//		res.Code = 1002
-	//		res.SetError(gerror.New(public.LangCtx(ctx, "API key has expired")))
-	//		return res, nil
-	//	}
-	//}
-
-	// 2. check email template
+	// 3. Check email template
 	_, err = getEmailTemplateById(ctx, apiTemplate.TemplateId)
 	if err != nil {
 		res.Code = 1004
@@ -55,91 +249,89 @@ func (c *ControllerV1) ApiMailSend(ctx context.Context, req *v1.ApiMailSendReq) 
 		return res, nil
 	}
 
-	// 3. check recipient
-	if req.Recipient == "" || !strings.Contains(req.Recipient, "@") {
+	// 4. Parse and validate recipient(s) (supports single, comma/semicolon/newline-delimited, and array)
+	recipients := parseRecipients(req.Recipient, req.Recipients)
+	if len(recipients) == 0 {
 		res.Code = 1003
-		res.SetError(gerror.New(public.LangCtx(ctx, "Invalid recipient")))
+		res.SetError(gerror.New(public.LangCtx(ctx, "Invalid or empty recipient email address(es)")))
 		return res, nil
 	}
 
-	// 4. process contact and group
-	if apiTemplate.GroupId > 0 {
-		// Add to the specified existing group
-		_, err = contact.AddContactToGroup(ctx, req.Recipient, apiTemplate.GroupId)
-		if err != nil {
-			g.Log().Warningf(ctx, "Failed to add contact %s to group %d: %v", req.Recipient, apiTemplate.GroupId, err)
-			res.Code = 1003
-			res.SetError(gerror.New(public.LangCtx(ctx, "Failed to process recipient: {}", err.Error())))
-			return res, nil
-		}
-	} else {
-		// Use the old logic to create an API-specific group
-		_, err = ensureContactAndGroup(ctx, req.Recipient, apiTemplate.Id)
-		if err != nil {
-			g.Log().Warningf(ctx, "Failed to ensure contact and group for %s with API ID %d: %v", req.Recipient, apiTemplate.Id, err)
-			res.Code = 1003
-			res.SetError(gerror.New(public.LangCtx(ctx, "Failed to process recipient: {}", err.Error())))
-			return res, nil
-		}
+	// 5. Process addresser
+	addresser := req.Addresser
+	if addresser == "" {
+		addresser = apiTemplate.Addresser
+	}
+	if addresser == "" {
+		addresser = "all_replies@b2bprosperity.com"
 	}
 
-	// 5. process addresser
-	if req.Addresser == "" {
-		req.Addresser = apiTemplate.Addresser
+	// 6. Process attributes & custom subject
+	attribs := req.Attribs
+	if attribs == nil {
+		attribs = make(map[string]string)
+	}
+	if req.Subject != "" {
+		attribs["subject"] = req.Subject
 	}
 
-	// 6. Join the sender queue
-	err = recordApiMailLog(ctx, apiTemplate, req.Recipient, req.Addresser, req.Attribs)
-	if err != nil {
-		res.Code = 1005
-		res.SetError(gerror.New(public.LangCtx(ctx, "Failed to record email log: {}", err.Error())))
-		return res, nil
-	}
-
-	res.SetSuccess(public.LangCtx(ctx, "Email sent successfully"))
-	return res, nil
-}
-
-// 记录到日志表，状态为待发送
-func recordApiMailLog(ctx context.Context, apiTemplate *entity.ApiTemplates, recipient, addresser string, attribs map[string]string) error {
-	// 生成消息ID
-
-	sender, err := mail_service.NewEmailSenderWithLocal(addresser)
-	if err != nil {
-		return gerror.New(public.LangCtx(ctx, "Failed to create email sender: {}", err))
-	}
-	defer sender.Close()
-
-	messageId := sender.GenerateMessageID()
-	messageId = strings.Trim(messageId, "<>")
-
-	// 直接记录到日志表，状态为待发送
+	// 7. Queue emails for all recipients
 	now := int(time.Now().Unix())
-	_, err = g.DB().Model("api_mail_logs").Insert(g.Map{
-		"api_id":        apiTemplate.Id,
-		"recipient":     recipient,
-		"message_id":    messageId, // 发送时需要加<>
-		"addresser":     addresser,
-		"status":        0, // 待发送
-		"error_message": "",
-		"send_time":     0,
-		"create_time":   now,
-		"attribs":       attribs,
-	})
+	batchData := make([]g.Map, 0, len(recipients))
+	for _, recipient := range recipients {
+		// Contact and group handling
+		if apiTemplate.GroupId > 0 {
+			_, err = contact.AddContactToGroup(ctx, recipient, apiTemplate.GroupId)
+			if err != nil {
+				g.Log().Warningf(ctx, "Failed to add contact %s to group %d: %v", recipient, apiTemplate.GroupId, err)
+			}
+		} else {
+			_, err = ensureContactAndGroup(ctx, recipient, apiTemplate.Id)
+			if err != nil {
+				g.Log().Warningf(ctx, "Failed to ensure contact and group for %s with API ID %d: %v", recipient, apiTemplate.Id, err)
+			}
+		}
 
-	return err
-
-}
-
-// get API template
-func getApiTemplateByKey(ctx context.Context, apiKey string, clientIP string) (*entity.ApiTemplates, error) {
-	var apiTemplate entity.ApiTemplates
-	err := g.DB().Model("api_templates").Where("api_key", apiKey).Where("active", 1).Scan(&apiTemplate)
-	if err != nil || apiTemplate.Id == 0 {
-		return nil, gerror.New(public.LangCtx(ctx, "API key is invalid"))
+		messageId := generateMessageId(addresser)
+		batchData = append(batchData, g.Map{
+			"api_id":        apiTemplate.Id,
+			"recipient":     recipient,
+			"message_id":    messageId,
+			"addresser":     addresser,
+			"status":        0, // Pending send
+			"error_message": "",
+			"send_time":     0,
+			"create_time":   now,
+			"attribs":       attribs,
+		})
 	}
 
-	return &apiTemplate, nil
+	if len(batchData) == 0 {
+		res.Code = 1003
+		res.SetError(gerror.New(public.LangCtx(ctx, "No valid recipients to queue")))
+		return res, nil
+	}
+
+	batchSize := 1000
+	for i := 0; i < len(batchData); i += batchSize {
+		end := i + batchSize
+		if end > len(batchData) {
+			end = len(batchData)
+		}
+		_, err = g.DB().Model("api_mail_logs").Batch(batchSize).Insert(batchData[i:end])
+		if err != nil {
+			res.Code = 1005
+			res.SetError(gerror.New(public.LangCtx(ctx, "Failed to record email log: {}", err.Error())))
+			return res, nil
+		}
+	}
+
+	if len(batchData) == 1 {
+		res.SetSuccess(public.LangCtx(ctx, "Email queued successfully"))
+	} else {
+		res.SetSuccess(fmt.Sprintf("%d emails queued successfully", len(batchData)))
+	}
+	return res, nil
 }
 
 // check API template by key and client IP

@@ -147,12 +147,15 @@ type ApiTemplatesDeleteRes struct {
 }
 
 type ApiMailSendReq struct {
-	g.Meta        `path:"/batch_mail/api/send" method:"post" tags:"ApiMail" summary:"call api send mail"`
-	Authorization string            `json:"authorization" dc:"Authorization" in:"header"`
-	ApiKey        string            `json:"x-api-key" dc:"API Key" in:"header"`
-	Addresser     string            `json:"addresser" dc:"addresser"`
-	Recipient     string            `json:"recipient" dc:"recipient"`
-	Attribs       map[string]string `json:"attribs" dc:"Custom properties"`
+	g.Meta        `path:"/batch_mail/api/send" method:"post" tags:"ApiMail" summary:"Send single or multiple emails" dc:"Queue single or multiple emails for delivery. Authenticate using Master Admin API Token in Authorization header (Bearer <token>) or x-api-key header, or use a dedicated Template API Key."`
+	Authorization string            `json:"authorization" dc:"Master Admin API Token ('Bearer <token>')" in:"header"`
+	ApiKey        string            `json:"x-api-key" dc:"Master Admin API Token or Template API Key" in:"header"`
+	TemplateId    int               `json:"template_id" dc:"Email template ID (optional, defaults to primary template or template bound to API key)"`
+	Subject       string            `json:"subject" dc:"Custom email subject (optional, overrides template subject)"`
+	Addresser     string            `json:"addresser" dc:"Sender email address (optional, e.g. all_replies@b2bprosperity.com)"`
+	Recipient     string            `json:"recipient" dc:"Recipient email address (supports single email or multiple separated by comma, semicolon, space, or newline)"`
+	Recipients    []string          `json:"recipients" dc:"Recipient email addresses (optional array format)"`
+	Attribs       map[string]string `json:"attribs" dc:"Custom merge tags and variables (e.g. {'name': 'John', 'company': 'Acme'})"`
 }
 
 type ApiMailSendRes struct {
@@ -160,12 +163,15 @@ type ApiMailSendRes struct {
 }
 
 type ApiMailBatchSendReq struct {
-	g.Meta        `path:"/batch_mail/api/batch_send" method:"post" tags:"ApiMail" summary:"call api batch send mail"`
-	Authorization string            `json:"authorization" dc:"Authorization" in:"header"`
-	ApiKey        string            `json:"x-api-key" dc:"API Key" in:"header"`
-	Addresser     string            `json:"addresser" dc:"addresser"`
-	Recipients    []string          `json:"recipients" dc:"recipients"`
-	Attribs       map[string]string `json:"attribs" dc:"Custom properties"`
+	g.Meta        `path:"/batch_mail/api/batch_send" method:"post" tags:"ApiMail" summary:"Batch send emails to multiple recipients" dc:"Queue batch emails to a list of recipients. Authenticate using Master Admin API Token in Authorization header (Bearer <token>) or x-api-key header, or use a dedicated Template API Key."`
+	Authorization string            `json:"authorization" dc:"Master Admin API Token ('Bearer <token>')" in:"header"`
+	ApiKey        string            `json:"x-api-key" dc:"Master Admin API Token or Template API Key" in:"header"`
+	TemplateId    int               `json:"template_id" dc:"Email template ID (optional, defaults to primary template or template bound to API key)"`
+	Subject       string            `json:"subject" dc:"Custom email subject (optional, overrides template subject)"`
+	Addresser     string            `json:"addresser" dc:"Sender email address (optional, e.g. all_replies@b2bprosperity.com)"`
+	Recipients    []string          `json:"recipients" dc:"List of recipient email addresses"`
+	Recipient     string            `json:"recipient" dc:"Recipient email address (optional comma/semicolon-separated fallback)"`
+	Attribs       map[string]string `json:"attribs" dc:"Custom merge tags and variables (e.g. {'name': 'John', 'company': 'Acme'})"`
 }
 
 type ApiMailBatchSendRes struct {

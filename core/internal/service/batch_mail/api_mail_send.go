@@ -486,6 +486,15 @@ func processMailContentAndSubject(ctx context.Context, content, subject string, 
 		}
 	}
 
+	if customSubj, ok := apiAttribs["subject"]; ok && fmt.Sprintf("%v", customSubj) != "" {
+		subject = fmt.Sprintf("%v", customSubj)
+	}
+	if customContent, ok := apiAttribs["content"]; ok && fmt.Sprintf("%v", customContent) != "" {
+		content = fmt.Sprintf("%v", customContent)
+	} else if customHTML, ok := apiAttribs["html"]; ok && fmt.Sprintf("%v", customHTML) != "" {
+		content = fmt.Sprintf("%v", customHTML)
+	}
+
 	if apiTemplate.Unsubscribe == 1 {
 		if !strings.Contains(content, "__UNSUBSCRIBE_URL__") && !strings.Contains(content, "{{ UnsubscribeURL . }}") {
 			content = public.AddUnsubscribeButton(content)
