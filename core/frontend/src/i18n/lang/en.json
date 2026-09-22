@@ -322,7 +322,7 @@
 				"remark": "Remark",
 				"remarkPlaceholder": "Please enter remark",
 				"testEmail": "Test email",
-				"testEmailPlaceholder": "Please enter test email",
+				"testEmailPlaceholder": "Enter email(s), comma separated",
 				"sendTest": "Send test mail",
 				"viewCase": "View case",
 				"tags": "Tags",

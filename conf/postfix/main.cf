@@ -4,7 +4,7 @@ maillog_file = /var/log/mail/mail.log
 myhostname = mail.b2bprosperity.com
 myorigin = mail.b2bprosperity.com
 mydestination = localhost, $myhostname
-mynetworks = 127.0.0.0/8, 5.230.29.58, 77.90.32.0/24, 172.66.1.0/24, 172.17.0.0/16, 10.0.0.0/8
+mynetworks = 127.0.0.0/8, 5.230.29.58, 77.90.32.0/24, 172.66.1.0/24, 172.17.0.0/16, 10.0.0.0/8, 185.215.180.87
 inet_interfaces = all
 default_process_limit = 250
 
@@ -59,3 +59,11 @@ smtpd_sasl_authenticated_header = yes
 smtpd_sasl_path = inet:127.0.0.1:10002
 smtpd_sasl_auth_enable = yes
 inet_protocols = ipv4
+
+# Queue management and bounce optimization
+notify_classes = 2bounce
+maximal_queue_lifetime = 1d
+bounce_queue_lifetime = 1d
+alias_maps = hash:/etc/aliases
+alias_database = hash:/etc/aliases
+mailbox_size_limit = 0

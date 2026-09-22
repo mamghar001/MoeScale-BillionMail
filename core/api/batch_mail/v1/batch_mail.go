@@ -237,9 +237,11 @@ type SendTestEmailReq struct {
 	g.Meta        `path:"/batch_mail/task/send_test" method:"post" tags:"BatchMail" summary:"Send test email"`
 	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
 	Addresser     string `json:"addresser" v:"required" dc:"Addresser"`
+	FullName      string `json:"full_name" dc:"Sender display name"`
 	Subject       string `json:"subject" v:"required" dc:"Subject"`
 	Recipient     string `json:"recipient" v:"required" dc:"Recipient"`
 	TemplateId    int    `json:"template_id" v:"required" dc:"Template ID"`
+	Unsubscribe   int    `json:"unsubscribe" dc:"Unsubscribe flag"`
 }
 
 type SendTestEmailRes struct {

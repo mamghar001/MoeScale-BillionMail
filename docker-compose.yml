@@ -5,10 +5,8 @@ services:
       deploy:
         resources:
           limits:
-            memory: 3500M
-            cpus: '2.0'
-          reservations:
             memory: 2048M
+            cpus: '1.5'
       image: postgres:17.4-alpine
       hostname: pgsql
       volumes:
@@ -84,8 +82,8 @@ services:
       deploy:
         resources:
           limits:
-            memory: 768M
-            cpus: '0.5'
+            memory: 3072M
+            cpus: '2.5'
       image: billionmail/dovecot:1.6
       entrypoint: ["/dovecot-fixed.sh", "/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
       hostname: dovecot
@@ -135,13 +133,15 @@ services:
       deploy:
         resources:
           limits:
-            memory: 1024M
+            memory: 2048M
       image: billionmail/postfix:1.6
       command: ["/postfix-fixed.sh"]
       hostname: postfix
       depends_on:
-        pgsql-billionmail:
-          condition: service_started
+        - pgsql-billionmail
+        - redis-billionmail
+        - rspamd-billionmail
+        - dovecot-billionmail
       volumes:
         - ./Dockerfiles/postfix/postfix-fixed.sh:/postfix-fixed.sh:ro
         - ./conf/postfix/main.cf:/etc/postfix/main.cf

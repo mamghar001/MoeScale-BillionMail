@@ -96,6 +96,11 @@ if [ ! -f "/etc/postfix/conf/vmail_ssl.map" ]; then
 fi
 postmap -F hash:/etc/postfix/conf/vmail_ssl.map
 
+if [ ! -f "/etc/aliases" ]; then
+    echo -e "postmaster: root\nroot: :include:/dev/null" > /etc/aliases
+    postalias /etc/aliases
+fi
+
 chgrp -R postdrop /var/spool/postfix/public
 chgrp -R postdrop /var/spool/postfix/maildrop
 
@@ -113,5 +118,14 @@ if [[ $? != 0 ]]; then
     echo "Postfix configuration error, Startup failed."
     exit 1
 else
+    # Ensure Dovecot LMTP is ready before starting Postfix
+    echo "Waiting for Dovecot LMTP (127.0.0.1:26) to be ready..."
+    for i in $(seq 1 30); do
+        if python3 -c "import socket; s = socket.socket(); s.connect(('127.0.0.1', 26)); s.close()" 2>/dev/null; then
+            echo "Dovecot LMTP is ready."
+            break
+        fi
+        sleep 1
+    done
     postfix start-fg
 fi

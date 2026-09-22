@@ -337,9 +337,11 @@ const handleSendTest = async () => {
 
 	await sendTestEmail({
 		addresser: form.addresser || '',
+		full_name: form.full_name || '',
 		subject: form.subject,
 		recipient: testEmail.value,
 		template_id: form.template_id || 0,
+		unsubscribe: form.unsubscribe ?? 0,
 	})
 }
 
