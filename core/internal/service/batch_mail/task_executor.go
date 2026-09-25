@@ -260,6 +260,9 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 		e.isPaused.Store(true)
 	}
 
+	// Reset any stranded fetched records from prior interrupted runs (is_sent = 2 -> is_sent = 0)
+	_, _ = e.resetFetchedRecords(taskId)
+
 	// check campaign warmup association
 	warmupAssociated := false
 	if warmupStat, _ := warmup.WarmupCampaign().GetWarmupStatusForCampaign(ctx, int64(taskId)); warmupStat != nil {
@@ -695,8 +698,21 @@ func (e *TaskExecutor) getNextRecipientBatch(ctx context.Context, taskId, lastId
 		Limit(batchSize).
 		Scan(&recipients)
 
-	if err != nil || len(recipients) == 0 {
+	if err != nil {
 		return recipients, err
+	}
+	if len(recipients) == 0 {
+		// If no more un-fetched records from lastId, check if any stranded records exist in is_sent = 2
+		strandedCount, _ := g.DB().Model("recipient_info").
+			Where("task_id", taskId).
+			Where("is_sent", 2).
+			Count()
+		if strandedCount > 0 {
+			_, _ = e.resetFetchedRecords(taskId)
+			// Retry query from beginning (lastId = 0)
+			return e.getNextRecipientBatch(ctx, taskId, 0, batchSize)
+		}
+		return recipients, nil
 	}
 
 	// Filter out inactive/bounced recipients from this batch
@@ -1259,6 +1275,9 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 		} else if len(mailboxes) > 0 {
 			// Filter out mailboxes on IP cooldown
 			healthyMailboxes := filterHealthyMailboxes(ctx, mailboxes)
+			if len(healthyMailboxes) == 0 {
+				healthyMailboxes = mailboxes
+			}
 			// Select mailbox based on recipient ID for consistent rotation
 			selected := selectRotatedSender(healthyMailboxes, recipient.Id)
 			senderEmail = selected.Username
@@ -1704,7 +1723,8 @@ func selectRotatedSender(mailboxes []MailboxInfo, recipientIndex int) MailboxInf
 		return MailboxInfo{}
 	}
 	h := sha256.Sum256([]byte(fmt.Sprintf("billionmail-sender-pick-%d", recipientIndex)))
-	return mailboxes[int(binary.BigEndian.Uint64(h[:8]))%len(mailboxes)]
+	idx := int(binary.BigEndian.Uint64(h[:8]) % uint64(len(mailboxes)))
+	return mailboxes[idx]
 }
 
 func getOutboundIPForRecipient(ctx context.Context, task *entity.EmailTask, recipient *entity.RecipientInfo) string {
@@ -1713,6 +1733,9 @@ func getOutboundIPForRecipient(ctx context.Context, task *entity.EmailTask, reci
 		mailboxes, err := getAllMailboxes(ctx)
 		if err == nil && len(mailboxes) > 0 {
 			healthyMailboxes := filterHealthyMailboxes(ctx, mailboxes)
+			if len(healthyMailboxes) == 0 {
+				healthyMailboxes = mailboxes
+			}
 			selected := selectRotatedSender(healthyMailboxes, recipient.Id)
 			senderEmail = selected.Username
 		}
@@ -1789,7 +1812,7 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 		return
 	}
 
-	if stats.Total < 10 { // not enough emails sent in the window to determine a pattern
+	if stats.Total < 30 || stats.Failed < 5 { // not enough emails or failures to determine a statistically valid pattern
 		return
 	}
 
@@ -1804,6 +1827,9 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 
 		// Set pause state
 		e.isPaused.Store(true)
+
+		// Reset any fetched records that weren't sent so they aren't lost
+		_, _ = e.resetFetchedRecords(taskId)
 
 		go func() {
 			time.Sleep(1 * time.Hour)
