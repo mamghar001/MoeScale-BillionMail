@@ -86,6 +86,30 @@
 									<n-switch v-model:value="form.rotate_senders" :checked-value="1" :unchecked-value="0">
 									</n-switch>
 								</n-form-item-gi>
+								<n-form-item-gi :span="24" label="Business Hours Sending Window (Pause at Night)">
+									<div class="flex flex-col gap-8px w-full">
+										<div class="flex items-center gap-12px">
+											<n-switch v-model:value="form.sending_window_enabled" :checked-value="1" :unchecked-value="0">
+											</n-switch>
+											<span v-if="!form.sending_window_enabled" class="text-xs text-desc">Disabled (Sends continuously 24/7)</span>
+											<span v-else class="text-xs text-primary font-medium">Active: Automatically pauses at night &amp; resumes in morning</span>
+										</div>
+										<div v-if="form.sending_window_enabled" class="flex flex-wrap items-center gap-12px pt-4px">
+											<div class="flex items-center gap-6px">
+												<span class="text-xs text-desc">From:</span>
+												<n-input v-model:value="form.sending_window_start" placeholder="08:00" style="width: 100px;" />
+											</div>
+											<div class="flex items-center gap-6px">
+												<span class="text-xs text-desc">To:</span>
+												<n-input v-model:value="form.sending_window_end" placeholder="18:00" style="width: 100px;" />
+											</div>
+											<div class="flex items-center gap-6px">
+												<span class="text-xs text-desc">Timezone:</span>
+												<n-select v-model:value="form.sending_window_tz" :options="timezoneOptions" style="width: 250px;" />
+											</div>
+										</div>
+									</div>
+								</n-form-item-gi>
 							</n-grid>
 
 							<n-form-item :label="$t('market.task.edit.threads')" :show-feedback="false">
@@ -217,7 +241,21 @@ const form = reactive({
 	track_click: 1,
 	track_open: 1,
 	rotate_senders: 1, // rotate through all mailboxes
+	sending_window_enabled: 1,
+	sending_window_start: '08:00',
+	sending_window_end: '18:00',
+	sending_window_tz: 'America/New_York',
 })
+
+const timezoneOptions = [
+	{ label: 'Eastern Time (US / New York)', value: 'America/New_York' },
+	{ label: 'Central Time (US / Chicago)', value: 'America/Chicago' },
+	{ label: 'Mountain Time (US / Denver)', value: 'America/Denver' },
+	{ label: 'Pacific Time (US / Los Angeles)', value: 'America/Los_Angeles' },
+	{ label: 'London / GMT (Europe)', value: 'Europe/London' },
+	{ label: 'Central European Time (Paris/Berlin)', value: 'Europe/Paris' },
+	{ label: 'UTC', value: 'UTC' },
+]
 
 const logicOptions = [
 	{
@@ -450,6 +488,18 @@ const initForm = async () => {
 		form.unsubscribe = res.unsubscribe
 		form.threads = res.threads
 		threadsType.value = res.threads === 0 ? 0 : 1
+		if (res.sending_window_enabled !== undefined) {
+			form.sending_window_enabled = res.sending_window_enabled
+		}
+		if (res.sending_window_start) {
+			form.sending_window_start = res.sending_window_start
+		}
+		if (res.sending_window_end) {
+			form.sending_window_end = res.sending_window_end
+		}
+		if (res.sending_window_tz) {
+			form.sending_window_tz = res.sending_window_tz
+		}
 		form.remark = res.remark
 		form.tag_logic = res.tag_logic
 		form.track_open = res.track_open

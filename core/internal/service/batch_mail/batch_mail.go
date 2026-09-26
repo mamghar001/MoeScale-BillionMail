@@ -416,30 +416,69 @@ func CreateTaskWithRecipients(ctx context.Context, req *v1.CreateTaskReq, addTyp
 			tagIdsJson = gconv.String(req.TagIds)
 		}
 
+		windowEnabled := req.SendingWindowEnabled
+		windowStart := req.SendingWindowStart
+		windowEnd := req.SendingWindowEnd
+		windowTz := req.SendingWindowTz
+
+		// Fallback to global business hours from bm_options if not explicitly provided
+		if windowEnabled == 0 && windowStart == "" && windowEnd == "" {
+			val, _ := g.DB().Model("bm_options").Ctx(ctx).Where("name", "business_hours_enabled").Value("value")
+			if !val.IsEmpty() && val.String() == "1" {
+				windowEnabled = 1
+			}
+			val, _ = g.DB().Model("bm_options").Ctx(ctx).Where("name", "business_hours_start").Value("value")
+			if !val.IsEmpty() {
+				windowStart = val.String()
+			}
+			val, _ = g.DB().Model("bm_options").Ctx(ctx).Where("name", "business_hours_end").Value("value")
+			if !val.IsEmpty() {
+				windowEnd = val.String()
+			}
+			val, _ = g.DB().Model("bm_options").Ctx(ctx).Where("name", "business_hours_tz").Value("value")
+			if !val.IsEmpty() {
+				windowTz = val.String()
+			}
+		}
+
+		if windowStart == "" {
+			windowStart = "08:00"
+		}
+		if windowEnd == "" {
+			windowEnd = "18:00"
+		}
+		if windowTz == "" {
+			windowTz = "America/New_York"
+		}
+
 		res, e := tx.Ctx(ctx).Model("email_tasks").Insert(g.Map{
-			"task_name":       taskName,
-			"addresser":       req.Addresser,
-			"subject":         req.Subject,
-			"full_name":       req.FullName,
-			"recipient_count": 0,
-			"task_process":    0,
-			"pause":           0,
-			"template_id":     req.TemplateId,
-			"is_record":       req.IsRecord,
-			"unsubscribe":     req.Unsubscribe,
-			"threads":         req.Threads,
-			"track_open":      req.TrackOpen,
-			"track_click":     req.TrackClick,
-			"rotate_senders":  req.RotateSenders,
-			"start_time":      req.StartTime,
-			"create_time":     now,
-			"update_time":     now,
-			"active":          1,
-			"remark":          req.Remark,
-			"add_type":        addType,
-			"group_id":        req.GroupId,
-			"tag_ids":         tagIdsJson,
-			"tag_logic":       req.TagLogic,
+			"task_name":              taskName,
+			"addresser":              req.Addresser,
+			"subject":                req.Subject,
+			"full_name":              req.FullName,
+			"recipient_count":        0,
+			"task_process":           0,
+			"pause":                  0,
+			"template_id":            req.TemplateId,
+			"is_record":              req.IsRecord,
+			"unsubscribe":            req.Unsubscribe,
+			"threads":                req.Threads,
+			"track_open":             req.TrackOpen,
+			"track_click":            req.TrackClick,
+			"rotate_senders":         req.RotateSenders,
+			"start_time":             req.StartTime,
+			"create_time":            now,
+			"update_time":            now,
+			"active":                 1,
+			"remark":                 req.Remark,
+			"add_type":               addType,
+			"group_id":               req.GroupId,
+			"tag_ids":                tagIdsJson,
+			"tag_logic":              req.TagLogic,
+			"sending_window_enabled": windowEnabled,
+			"sending_window_start":   windowStart,
+			"sending_window_end":     windowEnd,
+			"sending_window_tz":      windowTz,
 		})
 		if e != nil {
 			return gerror.New(public.LangCtx(ctx, "Failed to create task {}", e.Error()))

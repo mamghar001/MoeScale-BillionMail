@@ -21,6 +21,8 @@
 			<ApiSettings />
 			<n-divider />
 			<RetentionTime />
+			<n-divider />
+			<BusinessHoursSettings />
 		</div>
 	</n-card>
 </template>
@@ -32,4 +34,5 @@ import IpWhitelistSettings from './IpWhitelistSettings.vue'
 import ProxySettings from './ProxySettings.vue'
 import ApiSettings from './ApiSettings.vue'
 import RetentionTime from './System/RetentionTime.vue'
+import BusinessHoursSettings from './BusinessHoursSettings.vue'
 </script>

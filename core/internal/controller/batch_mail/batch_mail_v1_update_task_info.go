@@ -98,6 +98,18 @@ func (c *ControllerV1) UpdateTaskInfo(ctx context.Context, req *v1.UpdateTaskInf
 	if req.TagLogic == "AND" || req.TagLogic == "OR" || req.TagLogic == "NOT" {
 		updateData["tag_logic"] = req.TagLogic
 	}
+	if req.SendingWindowEnabled == 0 || req.SendingWindowEnabled == 1 {
+		updateData["sending_window_enabled"] = req.SendingWindowEnabled
+	}
+	if req.SendingWindowStart != "" {
+		updateData["sending_window_start"] = req.SendingWindowStart
+	}
+	if req.SendingWindowEnd != "" {
+		updateData["sending_window_end"] = req.SendingWindowEnd
+	}
+	if req.SendingWindowTz != "" {
+		updateData["sending_window_tz"] = req.SendingWindowTz
+	}
 	if len(updateData) == 0 {
 		res.SetError(gerror.New(public.LangCtx(ctx, "No valid update fields")))
 		return

@@ -47,6 +47,10 @@ type EmailTask struct {
 	UseTagFilter            int       `json:"use_tag_filter" dc:"Whether to use tag filter (1: yes, 0: no)"`
 	TagLogic                string    `json:"tag_logic" dc:"Tag logic (AND: must have all tags, OR: have any tag, NOT)"`
 	TagIdsRaw               string    `json:"-"              dc:"Tag IDs raw data for internal processing"`
+	SendingWindowEnabled    int       `json:"sending_window_enabled" dc:"enable business hours sending window"`
+	SendingWindowStart      string    `json:"sending_window_start" dc:"sending window start time (HH:mm)"`
+	SendingWindowEnd        string    `json:"sending_window_end" dc:"sending window end time (HH:mm)"`
+	SendingWindowTz         string    `json:"sending_window_tz" dc:"timezone"`
 }
 
 type GroupInfo struct {
@@ -151,11 +155,14 @@ type CreateTaskReq struct {
 	TrackClick    int    `json:"track_click" v:"in:0,1" dc:"track click" default:"1"`
 	RotateSenders int    `json:"rotate_senders" v:"in:0,1" dc:"rotate through ALL mailboxes (all domains)" default:"1"`
 	StartTime     int    `json:"start_time" v:"required" dc:"start time"`
-	Warmup        int    `json:"warmup" v:"in:0,1" dc:"warmup" default:"0"`
-	Remark        string `json:"remark" dc:"remark"`
-
-	TagIds   []int  `json:"tag_ids" dc:"tag ids for filtering contacts"`
-	TagLogic string `json:"tag_logic" v:"in:AND,OR,NOT" dc:"tag logic (AND: must have all tags, OR: have any tag, NOT)" default:"AND"`
+	Warmup               int    `json:"warmup"                 dc:"warmup" default:"0"`
+	Remark               string `json:"remark"                 dc:"remark"`
+	TagIds               []int  `json:"tag_ids"                dc:"tag ids for filtering contacts"`
+	TagLogic             string `json:"tag_logic" v:"in:AND,OR,NOT" dc:"tag logic (AND: must have all tags, OR: have any tag, NOT)" default:"AND"`
+	SendingWindowEnabled int    `json:"sending_window_enabled" v:"in:0,1" dc:"enable business hours sending window (0=disable, 1=enable)" default:"0"`
+	SendingWindowStart   string `json:"sending_window_start" dc:"sending window start time (HH:mm, e.g. '08:00')" default:"08:00"`
+	SendingWindowEnd     string `json:"sending_window_end" dc:"sending window end time (HH:mm, e.g. '18:00')" default:"18:00"`
+	SendingWindowTz      string `json:"sending_window_tz" dc:"timezone (e.g. 'America/New_York', 'UTC')" default:"America/New_York"`
 }
 
 type CreateTaskRes struct {
@@ -282,9 +289,39 @@ type UpdateTaskInfoReq struct {
 	Warmup        int    `json:"warmup" v:"in:0,1" dc:"warmup"`
 	Threads       int    `json:"threads" v:"min:0" dc:"threads"`
 	StartTime     int    `json:"start_time" dc:"start time"`
-	TagIds        []int  `json:"tag_ids" dc:"tag ids for filtering contacts"`
-	TagLogic      string `json:"tag_logic" v:"in:AND,OR,NOT" dc:"tag logic (AND: must have all tags, OR: have any tag, NOT)"`
+	TagIds               []int  `json:"tag_ids" dc:"tag ids for filtering contacts"`
+	TagLogic             string `json:"tag_logic" v:"in:AND,OR,NOT" dc:"tag logic (AND: must have all tags, OR: have any tag, NOT)"`
+	SendingWindowEnabled int    `json:"sending_window_enabled" dc:"enable business hours sending window (0=disable, 1=enable)"`
+	SendingWindowStart   string `json:"sending_window_start" dc:"sending window start time (HH:mm, e.g. '08:00')"`
+	SendingWindowEnd     string `json:"sending_window_end" dc:"sending window end time (HH:mm, e.g. '18:00')"`
+	SendingWindowTz      string `json:"sending_window_tz" dc:"timezone (e.g. 'America/New_York', 'UTC')"`
 }
 type UpdateTaskInfoRes struct {
+	api_v1.StandardRes
+}
+
+type GetBusinessHoursReq struct {
+	g.Meta        `path:"/batch_mail/business_hours" method:"get" tags:"BatchMail" summary:"get global business hours configuration"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+}
+type GetBusinessHoursRes struct {
+	api_v1.StandardRes
+	Data struct {
+		Enabled  int    `json:"enabled" dc:"1: enabled, 0: disabled"`
+		Start    string `json:"start" dc:"start time HH:mm"`
+		End      string `json:"end" dc:"end time HH:mm"`
+		Timezone string `json:"timezone" dc:"timezone"`
+	} `json:"data"`
+}
+
+type SetBusinessHoursReq struct {
+	g.Meta        `path:"/batch_mail/business_hours" method:"post" tags:"BatchMail" summary:"set global business hours configuration"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	Enabled       int    `json:"enabled" v:"in:0,1" dc:"1: enabled, 0: disabled"`
+	Start         string `json:"start" v:"required" dc:"start time (e.g. 08:00)"`
+	End           string `json:"end" v:"required" dc:"end time (e.g. 18:00)"`
+	Timezone      string `json:"timezone" dc:"timezone (e.g. America/New_York)"`
+}
+type SetBusinessHoursRes struct {
 	api_v1.StandardRes
 }

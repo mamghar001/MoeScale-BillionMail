@@ -90,8 +90,12 @@ type EmailTask struct {
 	TagIds          []int  `json:"tag_ids"         dc:"Tag IDs (parsed array)"`
 	TagLogic        string `json:"tag_logic"       dc:"Tag Logic (AND/OR/NOT)"`
 	UseTagFilter    int    `json:"use_tag_filter"  dc:"Use Tag Filter (0: no, 1: yes)"`
-	RotateSenders   int    `json:"rotate_senders"  dc:"Rotate through ALL mailboxes (all domains) (0: no, 1: yes)"`
-	Warmup          int    `json:"warmup"          dc:"Warmup Status (0: disabled, 1: enabled)"`
+	RotateSenders        int    `json:"rotate_senders"         dc:"Rotate through ALL mailboxes (all domains) (0: no, 1: yes)"`
+	Warmup               int    `json:"warmup"                 dc:"Warmup Status (0: disabled, 1: enabled)"`
+	SendingWindowEnabled int    `json:"sending_window_enabled" dc:"Sending Window Enabled (0: no, 1: yes)" orm:"sending_window_enabled"`
+	SendingWindowStart   string `json:"sending_window_start"   dc:"Sending Window Start (HH:mm)" orm:"sending_window_start"`
+	SendingWindowEnd     string `json:"sending_window_end"     dc:"Sending Window End (HH:mm)" orm:"sending_window_end"`
+	SendingWindowTz      string `json:"sending_window_tz"      dc:"Sending Window Timezone" orm:"sending_window_tz"`
 }
 
 // MarshalJSON implements custom JSON marshaling to convert TagIdsRaw to TagIds array

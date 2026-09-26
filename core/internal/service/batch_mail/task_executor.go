@@ -646,6 +646,17 @@ func (e *TaskExecutor) processTaskRecipients(ctx context.Context, task *entity.E
 			}
 		}
 
+		// Business hours / sending window check (pause at night)
+		if waitDur := e.checkBusinessHoursWindow(ctx, task); waitDur > 0 {
+			g.Log().Infof(ctx, "task %d: outside business hours sending window. Pausing for night (sleep %v)...", task.Id, waitDur.Round(time.Second))
+			select {
+			case <-time.After(waitDur):
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
 		// Dynamic protection check (every 2 minutes)
 		if time.Since(e.lastStatCheckTime) >= 2*time.Minute {
 			e.lastStatCheckTime = time.Now()
@@ -2016,4 +2027,104 @@ func isGlobalDailyLimitExceeded(ctx context.Context) bool {
 		return true
 	}
 	return false
+}
+
+// checkBusinessHoursWindow checks if current time in the campaign's timezone is within allowed business hours.
+// If outside the window, returns the wait duration until morning (capped at 5m for responsiveness).
+func (e *TaskExecutor) checkBusinessHoursWindow(ctx context.Context, task *entity.EmailTask) time.Duration {
+	if task == nil {
+		return 0
+	}
+
+	enabled := task.SendingWindowEnabled == 1
+	startStr := strings.TrimSpace(task.SendingWindowStart)
+	endStr := strings.TrimSpace(task.SendingWindowEnd)
+	tzStr := strings.TrimSpace(task.SendingWindowTz)
+
+	// If task doesn't have it explicitly enabled or set, fallback to global bm_options
+	if !enabled && task.SendingWindowEnabled == 0 && startStr == "" {
+		val, _ := g.DB().Model("bm_options").Ctx(ctx).Where("name", "business_hours_enabled").Value("value")
+		if !val.IsEmpty() && val.String() == "1" {
+			enabled = true
+			if s, _ := g.DB().Model("bm_options").Ctx(ctx).Where("name", "business_hours_start").Value("value"); !s.IsEmpty() {
+				startStr = strings.TrimSpace(s.String())
+			}
+			if s, _ := g.DB().Model("bm_options").Ctx(ctx).Where("name", "business_hours_end").Value("value"); !s.IsEmpty() {
+				endStr = strings.TrimSpace(s.String())
+			}
+			if s, _ := g.DB().Model("bm_options").Ctx(ctx).Where("name", "business_hours_tz").Value("value"); !s.IsEmpty() {
+				tzStr = strings.TrimSpace(s.String())
+			}
+		}
+	}
+
+	if !enabled {
+		return 0
+	}
+
+	if startStr == "" {
+		startStr = "08:00"
+	}
+	if endStr == "" {
+		endStr = "18:00"
+	}
+	if tzStr == "" {
+		tzStr = "America/New_York"
+	}
+
+	loc, err := time.LoadLocation(tzStr)
+	if err != nil {
+		loc = time.UTC
+	}
+
+	nowInTz := time.Now().In(loc)
+	currentMinutes := nowInTz.Hour()*60 + nowInTz.Minute()
+
+	parseMinutes := func(s string) (int, error) {
+		parts := strings.Split(s, ":")
+		if len(parts) != 2 {
+			return 0, fmt.Errorf("invalid time format")
+		}
+		h, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return 0, err
+		}
+		m, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, err
+		}
+		return h*60 + m, nil
+	}
+
+	startMinutes, err1 := parseMinutes(startStr)
+	endMinutes, err2 := parseMinutes(endStr)
+	if err1 != nil || err2 != nil {
+		return 0
+	}
+
+	if startMinutes < endMinutes {
+		// Daytime sending window: e.g. 08:00 (480) to 18:00 (1080)
+		if currentMinutes >= startMinutes && currentMinutes < endMinutes {
+			return 0 // Inside allowed sending window
+		}
+
+		var targetMorning time.Time
+		if currentMinutes < startMinutes {
+			// Earlier today morning
+			targetMorning = time.Date(nowInTz.Year(), nowInTz.Month(), nowInTz.Day(), startMinutes/60, startMinutes%60, 0, 0, loc)
+		} else {
+			// Tomorrow morning
+			targetMorning = time.Date(nowInTz.Year(), nowInTz.Month(), nowInTz.Day()+1, startMinutes/60, startMinutes%60, 0, 0, loc)
+		}
+		waitDur := targetMorning.Sub(nowInTz)
+		if waitDur > 0 {
+			// Cap sleep at 5 minutes to remain responsive to pause/stop/settings updates
+			if waitDur > 5*time.Minute {
+				return 5 * time.Minute
+			}
+			return waitDur
+		}
+	}
+
+	return 0
 }
