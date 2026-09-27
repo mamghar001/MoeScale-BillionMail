@@ -5,6 +5,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed, h } from 'vue'
 import { DataTableColumns, NDataTable } from 'naive-ui'
 import { MailProvider } from '../types'
 
@@ -12,16 +13,50 @@ const { t } = useI18n()
 
 const tableData = defineModel<MailProvider[]>('value')
 
+const totalSends = computed(() => {
+	return (tableData.value || []).reduce((sum, item) => sum + (item.sends || 0), 0)
+})
+
 const getRate = (val: number) => {
 	return val >= 0 ? `${val}%` : '--'
 }
 
-const columns = ref<DataTableColumns<MailProvider>>([
+const getShare = (sends: number) => {
+	const total = totalSends.value
+	if (!total || total <= 0 || !sends || sends <= 0) {
+		return '0%'
+	}
+	const pct = (sends / total) * 100
+	if (pct > 0 && pct < 0.01) {
+		return '<0.01%'
+	}
+	if (pct < 1) {
+		return `${Number(pct.toFixed(2))}%`
+	}
+	return `${Number(pct.toFixed(1))}%`
+}
+
+const columns = computed<DataTableColumns<MailProvider>>(() => [
 	{
 		key: 'mail_provider',
 		title: t('overview.provider.mailProvider'),
 		ellipsis: {
 			tooltip: true,
+		},
+	},
+	{
+		key: 'share',
+		title: t('overview.provider.share'),
+		render: row => {
+			const shareText = getShare(row.sends)
+			const sendsText = (row.sends || 0).toLocaleString()
+			return h(
+				'span',
+				{
+					title: `${sendsText} / ${totalSends.value.toLocaleString()} sent`,
+				},
+				shareText
+			)
 		},
 	},
 	{

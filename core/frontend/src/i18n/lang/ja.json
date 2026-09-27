@@ -131,6 +131,7 @@
 		"sendStats": "送信統計",
 		"provider": {
 			"mailProvider": "メールプロバイダー",
+			"share": "シェア",
 			"delivered": "配信",
 			"open": "開封",
 			"click": "クリック",

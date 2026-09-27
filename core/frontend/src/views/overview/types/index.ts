@@ -31,6 +31,7 @@ export type MailProvider = {
 	open_rate: number
 	opened: number
 	sends: number
+	share?: number
 }
 
 export type SendMail = {

@@ -140,6 +140,7 @@
 		"sendStats": "Send Statistics",
 		"provider": {
 			"mailProvider": "Mail Provider",
+			"share": "Share (%)",
 			"delivered": "Delivered",
 			"open": "Open",
 			"click": "Click",

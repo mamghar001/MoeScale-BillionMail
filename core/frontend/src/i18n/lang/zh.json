@@ -142,6 +142,7 @@
 		"sendStats": "发送统计",
 		"provider": {
 			"mailProvider": "邮件提供商",
+			"share": "占比",
 			"delivered": "送达率",
 			"open": "打开率",
 			"click": "点击率",
