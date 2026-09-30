@@ -413,3 +413,21 @@ type BatchTagContactsReq struct {
 type BatchTagContactsRes struct {
 	api_v1.StandardRes
 }
+
+type UnsubscribeContactReq struct {
+	g.Meta        `path:"/contact/unsubscribe" method:"post" tags:"Contact" summary:"Unsubscribe contact by email"`
+	Authorization string      `json:"authorization" dc:"Authorization" in:"header"`
+	ApiKey        string      `json:"api_key" dc:"API key (optional if Authorization header is set)"`
+	Email         string      `json:"email" dc:"Single email address to unsubscribe"`
+	Emails        interface{} `json:"emails" dc:"Single, array, or comma-separated list of emails to unsubscribe"`
+	Reason        string      `json:"reason" dc:"Optional reason for unsubscription"`
+}
+
+type UnsubscribeContactRes struct {
+	api_v1.StandardRes
+	Data struct {
+		UnsubscribedEmails []string `json:"unsubscribed_emails"`
+		AffectedContacts   int64    `json:"affected_contacts"`
+		Count              int      `json:"count"`
+	} `json:"data"`
+}

@@ -194,6 +194,7 @@ func (s *JWTService) JWTAuthMiddleware(r *ghttp.Request) {
 		r.URL.Path == "/api/get_validate_code" ||
 		r.URL.Path == "/api/unsubscribe" ||
 		r.URL.Path == "/api/unsubscribe_new" ||
+		r.URL.Path == "/api/contact/unsubscribe" ||
 		r.URL.Path == "/api/languages/set" ||
 		r.URL.Path == "/api/languages/get" ||
 		r.URL.Path == "/api/batch_mail/api/send" ||

@@ -142,6 +142,7 @@ var (
 				"/api/unsubscribe/user_group":    {},
 				"/api/unsubscribe":               {},
 				"/api/unsubscribe_new":           {},
+				"/api/contact/unsubscribe":       {},
 				"/api/batch_mail/api/send":       {},
 				"/api/batch_mail/api/batch_send": {},
 				"/api/subscribe/confirm":         {},
