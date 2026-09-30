@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Configuration
 BILLIONMAIL_DIR="/opt/billionmail"
 REPO_URL="https://github.com/mamghar001/MoeScale-BillionMail.git"
-BRANCH="${BRANCH:-main}"  # Default to main, allow override via env var
+BRANCH="${BRANCH:-master}"  # Default to master, allow override via env var
 
 # Logging
 log() {

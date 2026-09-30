@@ -1393,6 +1393,51 @@ EOF
     ln -sf ${PWD_d}/bm.sh /usr/bin/bm
     chmod +x ${PWD_d}/bm.sh
 
+    # MoeScale Automation & Deliverability Sentinels
+    if [ -f "${PWD_d}/fleet_automation/moescale-pruner.py" ]; then
+        cp -f "${PWD_d}/fleet_automation/moescale-pruner.py" /usr/local/bin/moescale-pruner.py
+        chmod +x /usr/local/bin/moescale-pruner.py
+    fi
+    if [ -f "${PWD_d}/fleet_automation/moescale-sentinel.py" ]; then
+        cp -f "${PWD_d}/fleet_automation/moescale-sentinel.py" /usr/local/bin/moescale-sentinel.py
+        chmod +x /usr/local/bin/moescale-sentinel.py
+    fi
+
+    # Host Logrotate Configuration (prevents mail.log exhaustion)
+    if [ -d "/etc/logrotate.d" ]; then
+        cat > /etc/logrotate.d/billionmail << 'EOF'
+/opt/billionmail/logs/postfix/mail.log /opt/billionmail/logs/dovecot/dovecot.log /opt/billionmail/logs/rspamd/rspamd.log {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
+EOF
+        chmod 644 /etc/logrotate.d/billionmail
+    fi
+
+    # Schedule Autonomous Maintenance Cron Jobs
+    if [ -d "/var/spool/cron/crontabs" ]; then
+        touch /var/spool/cron/crontabs/root
+        if ! grep -q "moescale-sentinel.py" /var/spool/cron/crontabs/root; then
+            echo "*/10 * * * * /usr/local/bin/moescale-sentinel.py >/dev/null 2>&1" >> /var/spool/cron/crontabs/root
+        fi
+        if ! grep -q "moescale-pruner.py" /var/spool/cron/crontabs/root; then
+            echo "30 3 * * * /usr/bin/nice -n 19 /usr/bin/ionice -c 3 /usr/local/bin/moescale-pruner.py >/dev/null 2>&1" >> /var/spool/cron/crontabs/root
+        fi
+        chmod 600 /var/spool/cron/crontabs/root
+    fi
+
+    # PostgreSQL Asynchronous Commit Optimization (eliminates disk wait bottlenecks)
+    if [ -f "postgresql-data/postgresql.auto.conf" ]; then
+        if ! grep -q "synchronous_commit" postgresql-data/postgresql.auto.conf; then
+            echo "synchronous_commit = 'off'" >> postgresql-data/postgresql.auto.conf
+            docker exec -i billionmail-pgsql-billionmail-1 psql -U billionmail -d billionmail -c "SELECT pg_reload_conf();" >/dev/null 2>&1 || true
+        fi
+    fi
 }
 
 
