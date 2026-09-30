@@ -4,7 +4,7 @@ id vmail || useradd -r -u 150 -g mail -d /var/vmail -s /sbin/nologin -c "Virtual
 chown vmail:mail /var/vmail
 
 # Fix ownership asynchronously in background so Dovecot starts instantly
-( find /var/vmail \( ! -user 150 -o ! -group 8 \) -exec chown vmail:mail {} + 2>/dev/null & )
+# (find disabled to prevent disk I/O lockup on boot with large mailboxes)
 
 if [ ! -f "/etc/ssl/mail/dh.pem" ] || [ ! -f "/etc/ssl/mail/cert.pem" ] || [ ! -f "/etc/ssl/mail/key.pem" ]; then
     cp -d -n /etc/ssl/ssl-self-signed/* /etc/ssl/mail/

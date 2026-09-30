@@ -6,12 +6,12 @@ myorigin = mail.b2bprosperity.com
 mydestination = localhost, $myhostname
 mynetworks = 127.0.0.0/8, 5.230.29.58, 77.90.32.0/24, 172.66.1.0/24, 172.17.0.0/16, 10.0.0.0/8, 185.215.180.87
 inet_interfaces = all
-default_process_limit = 250
+default_process_limit = 60
 
 # Virtual domain configuration
-virtual_mailbox_domains = pgsql:/etc/postfix/sql/pgsql_virtual_domains_maps.cf
-virtual_alias_maps = pgsql:/etc/postfix/sql/pgsql_virtual_alias_maps.cf, pgsql:/etc/postfix/sql/pgsql_virtual_alias_domain_catchall_maps.cf, pgsql:/etc/postfix/sql/pgsql_virtual_alias_domain_mailbox_maps.cf
-virtual_mailbox_maps = pgsql:/etc/postfix/sql/pgsql_virtual_mailbox_maps.cf, pgsql:/etc/postfix/sql/pgsql_virtual_alias_domain_catchall_maps.cf
+virtual_mailbox_domains = proxy:pgsql:/etc/postfix/sql/pgsql_virtual_domains_maps.cf
+virtual_alias_maps = proxy:pgsql:/etc/postfix/sql/pgsql_virtual_alias_maps.cf, proxy:pgsql:/etc/postfix/sql/pgsql_virtual_alias_domain_catchall_maps.cf, proxy:pgsql:/etc/postfix/sql/pgsql_virtual_alias_domain_mailbox_maps.cf
+virtual_mailbox_maps = proxy:pgsql:/etc/postfix/sql/pgsql_virtual_mailbox_maps.cf, proxy:pgsql:/etc/postfix/sql/pgsql_virtual_alias_domain_catchall_maps.cf
 virtual_transport = lmtp:inet:127.0.0.1:26
 
 # SMTPD restrictions - simple form
@@ -29,15 +29,17 @@ message_size_limit = 104857600
 # Local delivery
 local_recipient_maps =
 
-# Disable throttling for testing
-smtpd_soft_error_limit = 1000
-smtpd_hard_error_limit = 10000
-smtpd_error_sleep_time = 1s
+# Anti-brute force and throttling limits
+smtpd_soft_error_limit = 3
+smtpd_hard_error_limit = 5
+smtpd_error_sleep_time = 2s
+smtp_connect_timeout = 20s
+smtp_helo_timeout = 20s
 
 # Relay service
-sender_dependent_relayhost_maps = hash:/etc/postfix/conf/sender_relay_maps_primary, pgsql:/etc/postfix/sql/pgsql_sender_relay_maps.cf
+sender_dependent_relayhost_maps = hash:/etc/postfix/conf/sender_relay_maps_primary, proxy:pgsql:/etc/postfix/sql/pgsql_sender_relay_maps.cf
 smtp_sasl_password_maps = hash:/etc/postfix/conf/sasl_passwd_primary, hash:/etc/postfix/conf/sasl_passwd
-sender_dependent_default_transport_maps = pgsql:/etc/postfix/sql/pgsql_sender_transport_maps.cf
+sender_dependent_default_transport_maps = proxy:pgsql:/etc/postfix/sql/pgsql_sender_transport_maps.cf
 default_transport = smtp_safe_default
 
 # Milter configuration (added 2026-08-30)
@@ -57,7 +59,7 @@ tls_server_sni_maps = hash:/etc/postfix/conf/vmail_ssl.map
 smtpd_sasl_type = dovecot
 smtpd_sasl_authenticated_header = yes
 smtpd_sasl_path = inet:127.0.0.1:10002
-smtpd_sasl_auth_enable = yes
+smtpd_sasl_auth_enable = no
 inet_protocols = ipv4
 
 # Queue management and bounce optimization
