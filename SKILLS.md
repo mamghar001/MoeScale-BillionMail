@@ -1968,3 +1968,34 @@ python3 /opt/billionmail/test_deliverability_aboutmyemail.py alex@aibdr.shop
 * **DMARC Record:** MUST return `pass` (`v=DMARC1; p=quarantine; rua=mailto:dmarc@<domain>`).
 * **Reverse DNS (rDNS):** MUST return a valid PTR record matching the announced HELO hostname.
 
+---
+
+## 23. FLEET PERFORMANCE HARDENING & AUTONOMOUS DEAD MAILBOX PRUNING
+
+### A. Postfix Database Connection Pooling (`proxy:pgsql:`)
+- **Problem:** Postfix smtpd/cleanup workers spawned direct TCP connections (`pgsql:/etc/postfix/sql/...`) per process. Under peak concurrency (250+ workers), it opened 945 connections to PostgreSQL on port 25432, exhausting PostgreSQL's `max_connections` (100) and throwing `FATAL: sorry, too many clients already`.
+- **Enforced Solution:** All 14 Postfix SQL map references in `/opt/billionmail/conf/postfix/main.cf` MUST be defined via `proxy:pgsql:`. Postfix's internal `proxymap` service pools and reuses connections across all workers, keeping total PostgreSQL connections at ~30.
+
+### B. Port 25 Bot Brute-Force Defense & Submission Isolation
+- **Problem:** Global `smtpd_sasl_auth_enable = yes` in `main.cf` allowed automated internet port scanners to brute-force passwords across Port 25 with 10,000 attempts per connection (`smtpd_hard_error_limit = 10000`), pinning Postfix and Dovecot auth workers.
+- **Enforced Solution:**
+  - `smtpd_sasl_auth_enable = no` in `main.cf` (Port 25 is inbound MX only, no auth required).
+  - `smtpd_hard_error_limit = 5` and `smtpd_error_sleep_time = 2s` to hang up on bots immediately.
+  - `-o smtpd_sasl_auth_enable=yes` enabled exclusively on `submission` (port 587) and `smtps` (port 465) in `master.cf`.
+
+### C. Host Logrotate Policy
+- Postfix mail log at `/opt/billionmail/logs/postfix/mail.log` is rotated daily via `/etc/logrotate.d/billionmail` using `copytruncate`, keeping 7 compressed archives and preventing multi-gigabyte disk exhaustion.
+
+### D. PostgreSQL Asynchronous Commit
+- `synchronous_commit = 'off'` in `postgresql.auto.conf` allows buffering delivery log insertions (`bm_delivery_log`) in RAM, reducing disk I/O latency from 15ms down to <1ms.
+
+### E. Autonomous Dead Mailbox Pruner (`moescale-pruner.py`)
+- Location: `/opt/billionmail/fleet_automation/moescale-pruner.py` (installed to `/usr/local/bin/moescale-pruner.py`).
+- Crontab: Runs every night at 03:30 AM UTC (`nice -n 19 ionice -c 3`).
+- Logic:
+  - Scans `bm_delivery_log` for abnormal recipients (`status = 2` or `error_code != 0`).
+  - Purges confirmed non-existent recipients (`user unknown`, `no such user`, `mailbox not found`, `550 5.1.1`, etc.) from `bm_contacts` and `bm_contact_tags` so bad data never receives subsequent sends.
+  - Explicitly protects valid sales prospects affected by temporary spam/blacklist/RBL blocks (`spamhaus`, `proofpoint`, `blacklist`, `rate limit`, `greylist`).
+  - Strictly preserves genuine unsubscribes (`active = 0` and `unsubscribe_records`) to prevent compliance violations and distinguish hard bounces from unsubs.
+
+
