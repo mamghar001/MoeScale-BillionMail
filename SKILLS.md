@@ -1998,4 +1998,30 @@ python3 /opt/billionmail/test_deliverability_aboutmyemail.py alex@aibdr.shop
   - Explicitly protects valid sales prospects affected by temporary spam/blacklist/RBL blocks (`spamhaus`, `proofpoint`, `blacklist`, `rate limit`, `greylist`).
   - Strictly preserves genuine unsubscribes (`active = 0` and `unsubscribe_records`) to prevent compliance violations and distinguish hard bounces from unsubs.
 
+### F. Instant Lead Unsubscription API (`POST /api/contact/unsubscribe`)
+- **Purpose:** Programmatically unsubscribe leads who reply saying *"unsubscribe"* without needing an email JWT or contact ID.
+- **Endpoint:** `POST /api/contact/unsubscribe`
+- **Headers:** `Authorization: Bearer <API_TOKEN>` or `x-api-key: <API_TOKEN>`
+- **Request Body (JSON):**
+  ```json
+  {
+    "email": "prospect@example.com",
+    "reason": "Replied to cold email"
+  }
+  ```
+  *Supports single email (`"email"`), or multiple emails (`"emails": ["a@b.com", "c@d.com"]`).*
+- **What It Executes Automatically:**
+  1. Sets `active = 0` across all contact groups in `bm_contacts` where `email = ?`.
+  2. Inserts an audit trail into `unsubscribe_records` with current timestamp.
+  3. Updates interaction tracking in `contact_activity`.
+  4. Immediately suppresses the email from all current and future campaign batches.
+- **Example cURL:**
+  ```bash
+  curl -X POST https://<BM_DOMAIN>/api/contact/unsubscribe \
+    -H "x-api-key: <API_KEY>" \
+    -H "Content-Type: application/json" \
+    -d '{"email": "prospect@example.com"}'
+  ```
+
+
 
