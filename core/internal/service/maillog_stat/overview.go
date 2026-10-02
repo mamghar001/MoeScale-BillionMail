@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gogf/gf/v2/database/gdb"
@@ -44,37 +45,26 @@ func (o *Overview) filterAndPrepareTimeSection(startTime, endTime int64) (int64,
 
 // buildBaseQuery build basic query
 func (o *Overview) buildBaseQuery(campaignID int64, domain string, startTime, endTime int64) *gdb.Model {
-	subQuery := "SELECT * FROM mailstat_send_mails WHERE true"
+	query := g.DB().Model("mailstat_send_mails sm")
 
 	if startTime > 0 {
-		subQuery += fmt.Sprintf(" AND log_time_millis > %d", startTime*1000)
+		query.Where("sm.log_time_millis >= ?", startTime*1000)
 	}
 
 	if endTime > 0 {
-		subQuery += fmt.Sprintf(" AND log_time_millis < %d", endTime*1000)
+		query.Where("sm.log_time_millis <= ?", endTime*1000)
 	}
 
-	query := g.DB().Model("(" + subQuery + ") sm")
-	query.LeftJoin("mailstat_senders s", "sm.postfix_message_id=s.postfix_message_id")
-	query.Where("s.postfix_message_id is not null")
+	if domain != "" {
+		query.LeftJoin("mailstat_senders s", "sm.postfix_message_id=s.postfix_message_id")
+		query.Where("s.postfix_message_id is not null")
+		query.Where("s.sender LIKE ?", "%@"+domain)
+	}
 
 	if campaignID > 0 {
 		query.InnerJoin("mailstat_message_ids mi", "sm.postfix_message_id=mi.postfix_message_id")
 		query.InnerJoin(fmt.Sprintf("(SELECT message_id FROM recipient_info WHERE task_id = %d) r", campaignID), "mi.message_id=r.message_id")
-		// query.Where("r.task_id = ?", campaignID)
 	}
-
-	if domain != "" {
-		query.Where("s.sender LIKE ?", "%@"+domain)
-	}
-
-	//if startTime > 0 {
-	//	query.Where("sm.log_time_millis > ?", startTime*1000-1)
-	//}
-	//
-	//if endTime > 0 {
-	//	query.Where("sm.log_time_millis < ?", endTime*1000+1)
-	//}
 
 	return query
 }
@@ -83,38 +73,94 @@ func (o *Overview) buildBaseQuery(campaignID int64, domain string, startTime, en
 func (o *Overview) Overview(campaignID int64, domain string, startTime, endTime int64) map[string]interface{} {
 	startTime, endTime = o.filterAndPrepareTimeSection(startTime, endTime)
 
-	return map[string]interface{}{
-		"dashboard":         o.overviewDashboard(campaignID, domain, startTime, endTime),
-		"mail_providers":    o.overviewProviders(campaignID, domain, startTime, endTime),
-		"send_mail_chart":   o.chartSendMail(campaignID, domain, startTime, endTime),
-		"bounce_rate_chart": o.chartBounceRate(campaignID, domain, startTime, endTime),
-		"open_rate_chart":   o.chartOpenRate(campaignID, domain, startTime, endTime),
-		"click_rate_chart":  o.chartClickRate(campaignID, domain, startTime, endTime),
+	cacheKey := fmt.Sprintf("overview_stat_%d_%s_%d_%d", campaignID, domain, startTime, endTime)
+	cached := public.GetCache(cacheKey)
+	if cached != nil {
+		if cachedMap, ok := cached.(map[string]interface{}); ok {
+			resMap := make(map[string]interface{}, len(cachedMap))
+			for k, v := range cachedMap {
+				resMap[k] = v
+			}
+			if dash, ok := resMap["dashboard"].(map[string]interface{}); ok {
+				newDash := make(map[string]interface{}, len(dash))
+				for dk, dv := range dash {
+					newDash[dk] = dv
+				}
+				if delayedCount, err := o.getPostfixDeferredQueueCount(context.Background()); err == nil {
+					newDash["delayed_queue"] = delayedCount
+				}
+				resMap["dashboard"] = newDash
+			}
+			return resMap
+		}
 	}
+
+	var (
+		dashboard       map[string]interface{}
+		mailProviders   []map[string]interface{}
+		sendMailChart   map[string]interface{}
+		bounceRateChart map[string]interface{}
+		openRateChart   map[string]interface{}
+		clickRateChart  map[string]interface{}
+		wg              sync.WaitGroup
+	)
+
+	wg.Add(6)
+	go func() {
+		defer wg.Done()
+		dashboard = o.overviewDashboard(campaignID, domain, startTime, endTime)
+	}()
+	go func() {
+		defer wg.Done()
+		mailProviders = o.overviewProviders(campaignID, domain, startTime, endTime)
+	}()
+	go func() {
+		defer wg.Done()
+		sendMailChart = o.chartSendMail(campaignID, domain, startTime, endTime)
+	}()
+	go func() {
+		defer wg.Done()
+		bounceRateChart = o.chartBounceRate(campaignID, domain, startTime, endTime)
+	}()
+	go func() {
+		defer wg.Done()
+		openRateChart = o.chartOpenRate(campaignID, domain, startTime, endTime)
+	}()
+	go func() {
+		defer wg.Done()
+		clickRateChart = o.chartClickRate(campaignID, domain, startTime, endTime)
+	}()
+	wg.Wait()
+
+	result := map[string]interface{}{
+		"dashboard":         dashboard,
+		"mail_providers":    mailProviders,
+		"send_mail_chart":   sendMailChart,
+		"bounce_rate_chart": bounceRateChart,
+		"open_rate_chart":   openRateChart,
+		"click_rate_chart":  clickRateChart,
+	}
+
+	ttl := 60
+	if endTime < time.Now().Unix()-3600 {
+		ttl = 3600
+	}
+	public.SetCache(cacheKey, result, ttl)
+
+	return result
 }
 
 // overviewDashboard dashboard data
 func (o *Overview) overviewDashboard(campaignID int64, domain string, startTime, endTime int64) map[string]interface{} {
 	query := o.buildBaseQuery(campaignID, domain, startTime, endTime)
 
-	query.LeftJoin(`LATERAL(
-	SELECT id
-	FROM mailstat_opened
-	WHERE sm.postfix_message_id = postfix_message_id
-	LIMIT 1
-) as o`, "true")
-
-	query.LeftJoin(`LATERAL(
-	SELECT id
-	FROM mailstat_clicked
-	WHERE sm.postfix_message_id = postfix_message_id
-	LIMIT 1
-) as c`, "true")
+	query.LeftJoin("(SELECT DISTINCT postfix_message_id FROM mailstat_opened) o", "sm.postfix_message_id = o.postfix_message_id")
+	query.LeftJoin("(SELECT DISTINCT postfix_message_id FROM mailstat_clicked) c", "sm.postfix_message_id = c.postfix_message_id")
 
 	query.Fields("count(*) as sends")
 	query.Fields("coalesce(sum(case when status='sent' and dsn like '2.%' then 1 else 0 end), 0) as delivered")
-	query.Fields("count(o.id) as opened")
-	query.Fields("count(c.id) as clicked")
+	query.Fields("count(o.postfix_message_id) as opened")
+	query.Fields("count(c.postfix_message_id) as clicked")
 	query.Fields("coalesce(sum(case when status='bounced' then 1 else 0 end), 0) as bounced")
 
 	aggregate := map[string]interface{}{
@@ -218,25 +264,14 @@ func (o *Overview) overviewProviders(campaignID int64, domain string, startTime,
 
 	query := o.buildBaseQuery(campaignID, domain, startTime, endTime)
 
-	query.LeftJoin(`LATERAL(
-	SELECT id
-	FROM mailstat_opened
-	WHERE sm.postfix_message_id = postfix_message_id
-	LIMIT 1
-) as o`, "true")
-
-	query.LeftJoin(`LATERAL(
-	SELECT id
-	FROM mailstat_clicked
-	WHERE sm.postfix_message_id = postfix_message_id
-	LIMIT 1
-) as c`, "true")
+	query.LeftJoin("(SELECT DISTINCT postfix_message_id FROM mailstat_opened) o", "sm.postfix_message_id = o.postfix_message_id")
+	query.LeftJoin("(SELECT DISTINCT postfix_message_id FROM mailstat_clicked) c", "sm.postfix_message_id = c.postfix_message_id")
 
 	query.Fields("sm.mail_provider")
 	query.Fields("count(*) as sends")
 	query.Fields("coalesce(sum(case when status='sent' and dsn like '2.%' then 1 else 0 end), 0) as delivered")
-	query.Fields("count(o.id) as opened")
-	query.Fields("count(c.id) as clicked")
+	query.Fields("count(o.postfix_message_id) as opened")
+	query.Fields("count(c.postfix_message_id) as clicked")
 	query.Fields("coalesce(sum(case when status='bounced' then 1 else 0 end), 0) as bounced")
 
 	query.Group("sm.mail_provider")
@@ -554,15 +589,10 @@ func (o *Overview) chartOpenRate(campaignID int64, domain string, startTime, end
 
 	columnType, xAxisField := o.prepareChartData(startTime, endTime)
 
-	query.LeftJoin(`LATERAL(
-	SELECT id
-	FROM mailstat_opened
-	WHERE sm.postfix_message_id = postfix_message_id
-	LIMIT 1
-) as o`, "true")
+	query.LeftJoin("(SELECT DISTINCT postfix_message_id FROM mailstat_opened) o", "sm.postfix_message_id = o.postfix_message_id")
 
 	query.Fields(xAxisField)
-	query.Fields("case when coalesce(sum(case when status='sent' and dsn like '2.%' then 1 else 0 end), 0) > 0 then round(1.0 * count(o.id) / coalesce(sum(case when status='sent' and dsn like '2.%' then 1 else 0 end), 0) * 100, 2) else 0.0 end as open_rate")
+	query.Fields("case when coalesce(sum(case when status='sent' and dsn like '2.%' then 1 else 0 end), 0) > 0 then round(1.0 * count(o.postfix_message_id) / coalesce(sum(case when status='sent' and dsn like '2.%' then 1 else 0 end), 0) * 100, 2) else 0.0 end as open_rate")
 
 	query.Group("x")
 
@@ -594,22 +624,11 @@ func (o *Overview) chartClickRate(campaignID int64, domain string, startTime, en
 
 	columnType, xAxisField := o.prepareChartData(startTime, endTime)
 
-	query.LeftJoin(`LATERAL(
-	SELECT id
-	FROM mailstat_opened
-	WHERE sm.postfix_message_id = postfix_message_id
-	LIMIT 1
-) as o`, "true")
-
-	query.LeftJoin(`LATERAL(
-	SELECT id
-	FROM mailstat_clicked
-	WHERE sm.postfix_message_id = postfix_message_id
-	LIMIT 1
-) as c`, "true")
+	query.InnerJoin("(SELECT DISTINCT postfix_message_id FROM mailstat_opened) o", "sm.postfix_message_id = o.postfix_message_id")
+	query.LeftJoin("(SELECT DISTINCT postfix_message_id FROM mailstat_clicked) c", "sm.postfix_message_id = c.postfix_message_id")
 
 	query.Fields(xAxisField)
-	query.Fields("case when count(o.id) > 0 then round(1.0 * count(c.id) / count(o.id) * 100, 2) else 0.0 end as click_rate")
+	query.Fields("case when count(o.postfix_message_id) > 0 then round(1.0 * count(c.postfix_message_id) / count(o.postfix_message_id) * 100, 2) else 0.0 end as click_rate")
 
 	query.Group("x")
 
@@ -640,6 +659,10 @@ func (o *Overview) FailedList(campaignID int64, domain string, startTime, endTim
 
 	query := o.buildBaseQuery(campaignID, domain, startTime, endTime)
 
+	if domain == "" {
+		query.LeftJoin("mailstat_senders s", "sm.postfix_message_id=s.postfix_message_id")
+	}
+
 	query.LeftJoin(`LATERAL(
 	SELECT id, dsn, delay, delays, relay, description
 	FROM mailstat_deferred_mails
@@ -649,7 +672,7 @@ func (o *Overview) FailedList(campaignID int64, domain string, startTime, endTim
 ) as d`, "true")
 
 	query.Fields("sm.postfix_message_id")
-	query.Fields("s.sender")
+	query.Fields("coalesce(s.sender, '') as sender")
 	query.Fields("sm.recipient")
 	query.Fields("sm.log_time")
 	query.Fields("sm.status")

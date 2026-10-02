@@ -197,7 +197,7 @@ services:
         - ROUNDCUBEMAIL_DEFAULT_HOST=dovecot
         - ROUNDCUBEMAIL_DEFAULT_PORT=${IMAP_PORT:-143}
         - ROUNDCUBEMAIL_SMTP_SERVER=postfix
-        - ROUNDCUBEMAIL_SMTP_PORT=${SMTP_PORT:-25}
+        - ROUNDCUBEMAIL_SMTP_PORT=2525
         - ROUNDCUBEMAIL_REQUEST_PATH=/roundcube
       restart: always
       extra_hosts:

@@ -124,7 +124,7 @@ func NewEmailSender() *EmailSender {
 
 	if public.IsRunningInContainer() {
 		e.Host = "postfix"
-		// e.Port = "587"
+		e.Port = "2525"
 		// e.SNI, _ = public.DockerEnv("BILLIONMAIL_HOSTNAME")
 	}
 
@@ -250,17 +250,19 @@ func (e *EmailSender) connectPlain() error {
 		}
 	}
 
-	var auth smtp.Auth
+	if ok, _ := client.Extension("AUTH"); ok && e.UserName != "" && e.Password != "" {
+		var auth smtp.Auth
 
-	if e.Port == "25" {
-		auth = &customAuth{e.UserName, e.Password}
-	} else {
-		auth = smtp.PlainAuth("", e.UserName, e.Password, e.Host)
-	}
+		if e.Port == "25" || e.Port == "2525" {
+			auth = &customAuth{e.UserName, e.Password}
+		} else {
+			auth = smtp.PlainAuth("", e.UserName, e.Password, e.Host)
+		}
 
-	if err = client.Auth(auth); err != nil {
-		client.Close()
-		return fmt.Errorf("SMTP auth: %w", err)
+		if err = client.Auth(auth); err != nil {
+			client.Close()
+			return fmt.Errorf("SMTP auth: %w", err)
+		}
 	}
 
 	e.client = client

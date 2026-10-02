@@ -10,6 +10,18 @@
 #               (yes)   (yes)   (no)    (never) (100)
 # ==========================================================================
 smtp      inet  n       -       n       -       -       smtpd
+172.66.1.1:2525 inet n  -       n       -       -       smtpd
+  -o smtpd_sasl_auth_enable=yes
+  -o smtpd_client_restrictions=permit_mynetworks,reject
+  -o smtpd_relay_restrictions=permit_mynetworks,permit_sasl_authenticated,reject
+  -o milter_macro_daemon_name=ORIGINATING
+  -o syslog_name=postfix/internal_submission
+127.0.0.1:2525 inet n   -       n       -       -       smtpd
+  -o smtpd_sasl_auth_enable=yes
+  -o smtpd_client_restrictions=permit_mynetworks,reject
+  -o smtpd_relay_restrictions=permit_mynetworks,permit_sasl_authenticated,reject
+  -o milter_macro_daemon_name=ORIGINATING
+  -o syslog_name=postfix/internal_submission
 #smtp      inet  n       -       n       -       1       postscreen
 #smtpd     pass  -       -       n       -       -       smtpd
 #dnsblog   unix  -       -       n       -       0       dnsblog
