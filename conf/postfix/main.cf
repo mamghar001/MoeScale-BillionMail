@@ -19,10 +19,7 @@ smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_
 smtpd_recipient_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
 smtpd_sender_restrictions = permit_mynetworks
 
-# Header checks
-smtpd_use_tls = yes
-smtp_use_tls = yes
-
+# Header checks & Outbound Privacy
 # Message size limit
 message_size_limit = 104857600
 
@@ -33,8 +30,8 @@ local_recipient_maps =
 smtpd_soft_error_limit = 3
 smtpd_hard_error_limit = 5
 smtpd_error_sleep_time = 2s
-smtp_connect_timeout = 20s
-smtp_helo_timeout = 20s
+smtp_connect_timeout = 10s
+smtp_helo_timeout = 10s
 
 # Relay service
 sender_dependent_relayhost_maps = hash:/etc/postfix/conf/sender_relay_maps_primary, proxy:pgsql:/etc/postfix/sql/pgsql_sender_relay_maps.cf
@@ -49,15 +46,22 @@ milter_mail_macros = i {mail_addr} {client_addr} {client_name} {auth_authen} {au
 milter_protocol = 6
 milter_default_action = accept
 
-# TLS configuration (added 2026-08-30)
+# Inbound TLS configuration
 smtpd_tls_cert_file = /etc/ssl/mail/mail.b2bprosperity.com/fullchain.pem
 smtpd_tls_key_file = /etc/ssl/mail/mail.b2bprosperity.com/privkey.pem
 smtpd_tls_security_level = may
 tls_server_sni_maps = hash:/etc/postfix/conf/vmail_ssl.map
 
-# SASL configuration (added 2026-08-30)
+# Outbound TLS configuration (Modern TLS 1.2+ & System CA Verification)
+smtp_tls_security_level = may
+smtp_tls_protocols = >=TLSv1.2
+smtp_tls_ciphers = medium
+smtp_tls_CApath = /etc/ssl/certs
+smtp_tls_loglevel = 1
+
+# SASL configuration
 smtpd_sasl_type = dovecot
-smtpd_sasl_authenticated_header = yes
+smtpd_sasl_authenticated_header = no
 smtpd_sasl_path = inet:127.0.0.1:10002
 smtpd_sasl_auth_enable = no
 inet_protocols = ipv4

@@ -1,0 +1,16 @@
+# Outbound Header Privacy & Footprint Stripping
+# Applied strictly to outbound SMTP client delivery (smtp_header_checks)
+# Prevents cross-fleet clustering and hides internal submitter / client IPs
+
+# Strip client submission hops containing internal client IPs or b2bprosperity hostname
+/^\s*Received:\s+from.*with\s+ESMTPSA/                 IGNORE
+/^\s*Received:\s+from.*by\s+mail\.b2bprosperity\.com/  IGNORE
+
+# Strip software fingerprints and client identification
+/^\s*User-Agent:/                                      IGNORE
+/^\s*X-Mailer:/                                        IGNORE
+/^\s*X-Originating-IP:/                                IGNORE
+/^\s*X-Forward:/                                       IGNORE
+/^\s*X-Enigmail:/                                      IGNORE
+/^\s*X-Rspamd-Server:/                                 IGNORE
+/^\s*X-Rspamd-Queue-Id:/                               IGNORE
