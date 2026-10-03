@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"github.com/gogf/gf/util/grand"
 	"github.com/gogf/gf/v2/frame/g"
+	"html"
 	"io"
 	"mime"
 	"mime/quotedprintable"
 	"net"
 	"net/smtp"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +50,40 @@ func (m Message) MailHeader() string {
 		headers += fmt.Sprintf("%s: %s\r\n", key, value)
 	}
 	return headers
+}
+
+// encodeQP encodes a string into quoted-printable format
+func encodeQP(s string) string {
+	buf := new(bytes.Buffer)
+	wt := quotedprintable.NewWriter(buf)
+	_, _ = wt.Write([]byte(s))
+	_ = wt.Close()
+	return buf.String()
+}
+
+// stripHTMLTags converts an HTML string to clean, readable plain text
+func stripHTMLTags(s string) string {
+	r := strings.NewReplacer(
+		"<br>", "\n", "<br/>", "\n", "<br />", "\n",
+		"</p>", "\n\n", "</div>", "\n", "</li>", "\n",
+		"</h1>", "\n\n", "</h2>", "\n\n", "</h3>", "\n\n",
+	)
+	cleaned := r.Replace(s)
+	re := regexp.MustCompile(`<[^>]*>`)
+	cleaned = re.ReplaceAllString(cleaned, "")
+	cleaned = html.UnescapeString(cleaned)
+	reMultiNL := regexp.MustCompile(`\n{3,}`)
+	cleaned = reMultiNL.ReplaceAllString(cleaned, "\n\n")
+	return strings.TrimSpace(cleaned)
+}
+
+// wrapFullHTML ensures HTML content has doctype, html, head, and body tags
+func wrapFullHTML(s string) string {
+	lower := strings.ToLower(s)
+	if strings.Contains(lower, "<html") && strings.Contains(lower, "<body") {
+		return s
+	}
+	return fmt.Sprintf("<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<meta charset=\"utf-8\">\r\n</head>\r\n<body style=\"font-family: Arial, sans-serif; line-height: 1.6;\">\r\n%s\r\n</body>\r\n</html>", s)
 }
 
 // MessageID get Message-ID of email
@@ -367,11 +403,6 @@ func (e *EmailSender) doSend(message Message, recipients []string) error {
 		message.Headers["Date"] = time.Now().Format(time.RFC1123Z)
 	}
 
-	// Default Content-Type if not already set
-	if _, exists := message.Headers["Content-Type"]; !exists {
-		message.Headers["Content-Type"] = "text/html; charset=utf-8"
-	}
-
 	// Default From header
 	from := fmt.Sprintf("%s <%s>", strings.Split(e.Email, "@")[0], e.Email)
 
@@ -385,16 +416,47 @@ func (e *EmailSender) doSend(message Message, recipients []string) error {
 		delete(message.Headers, "From")
 	}
 
-	// Build email message with headers
-	headerString := fmt.Sprintf("From: %s\r\n", from) +
-		fmt.Sprintf("To: %s\r\n", strings.Join(recipients, ",")) +
-		fmt.Sprintf("Subject: %s\r\n", message.MailTitle()) +
-		"MIME-Version: 1.0\r\n" +
-		"Content-Transfer-Encoding: quoted-printable\r\n" +
-		message.MailHeader() +
-		"\r\n" +
-		message.MailText() +
-		"\r\n"
+	// Clean out any raw Content-Type or Content-Transfer-Encoding so we format MIME structure properly
+	delete(message.Headers, "Content-Type")
+	delete(message.Headers, "Content-Transfer-Encoding")
+
+	// Detect if content contains HTML
+	isHTML := strings.Contains(message.Content, "<") && strings.Contains(message.Content, ">")
+	var headerString string
+
+	if isHTML {
+		boundary := fmt.Sprintf("=_frontier_%d", time.Now().UnixNano())
+		plainText := stripHTMLTags(message.Content)
+		fullHTML := wrapFullHTML(message.Content)
+
+		headerString = fmt.Sprintf("From: %s\r\n", from) +
+			fmt.Sprintf("To: %s\r\n", strings.Join(recipients, ",")) +
+			fmt.Sprintf("Subject: %s\r\n", message.MailTitle()) +
+			"MIME-Version: 1.0\r\n" +
+			fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundary) +
+			message.MailHeader() +
+			"\r\n" +
+			fmt.Sprintf("--%s\r\n", boundary) +
+			"Content-Type: text/plain; charset=utf-8\r\n" +
+			"Content-Transfer-Encoding: quoted-printable\r\n\r\n" +
+			encodeQP(plainText) + "\r\n\r\n" +
+			fmt.Sprintf("--%s\r\n", boundary) +
+			"Content-Type: text/html; charset=utf-8\r\n" +
+			"Content-Transfer-Encoding: quoted-printable\r\n\r\n" +
+			encodeQP(fullHTML) + "\r\n\r\n" +
+			fmt.Sprintf("--%s--\r\n", boundary)
+	} else {
+		headerString = fmt.Sprintf("From: %s\r\n", from) +
+			fmt.Sprintf("To: %s\r\n", strings.Join(recipients, ",")) +
+			fmt.Sprintf("Subject: %s\r\n", message.MailTitle()) +
+			"MIME-Version: 1.0\r\n" +
+			"Content-Type: text/plain; charset=utf-8\r\n" +
+			"Content-Transfer-Encoding: quoted-printable\r\n" +
+			message.MailHeader() +
+			"\r\n" +
+			encodeQP(message.Content) +
+			"\r\n"
+	}
 
 	msg := []byte(headerString)
 
