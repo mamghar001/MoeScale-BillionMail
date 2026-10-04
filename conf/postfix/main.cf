@@ -16,7 +16,7 @@ virtual_transport = lmtp:inet:127.0.0.1:26
 
 # SMTPD restrictions - simple form
 smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
-smtpd_recipient_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+smtpd_recipient_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination, reject_rbl_client bl.spamcop.net, reject_rbl_client b.barracudacentral.org
 smtpd_sender_restrictions = permit_mynetworks
 
 # Header checks & Outbound Privacy

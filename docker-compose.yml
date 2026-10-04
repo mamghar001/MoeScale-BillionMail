@@ -5,7 +5,7 @@ services:
       deploy:
         resources:
           limits:
-            memory: 2048M
+            memory: 3584M
             cpus: '1.5'
       image: postgres:17.4-alpine
       hostname: pgsql

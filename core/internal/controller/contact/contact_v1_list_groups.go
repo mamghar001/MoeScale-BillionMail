@@ -5,6 +5,7 @@ import (
 	"billionmail-core/internal/service/contact"
 	"billionmail-core/internal/service/public"
 	"context"
+	"fmt"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 )
@@ -33,17 +34,33 @@ func (c *ControllerV1) ListGroups(ctx context.Context, req *v1.ListGroupsReq) (r
 	//hostUrl := domains.GetBaseURL()
 	// Convert group information
 	groupInfos := make([]*v1.ContactGroupInfo, 0, len(groups))
-	for _, group := range groups {
-		// Get statistics information
-		activeCount, err := contact.CountContactsByGroup(ctx, group.Id, 1)
-		if err != nil {
-			activeCount = 0
-		}
 
-		unsubscribeCount, err := contact.CountContactsByGroup(ctx, group.Id, 0)
-		if err != nil {
-			unsubscribeCount = 0
-		}
+	// Batch count active and unsubscribed contacts for all groups on the page in a single query
+	groupIds := make([]int, len(groups))
+	for i, group := range groups {
+		groupIds[i] = group.Id
+	}
+	type GroupCount struct {
+		GroupId int `json:"group_id"`
+		Active  int `json:"active"`
+		Count   int `json:"count"`
+	}
+	var counts []GroupCount
+	if len(groupIds) > 0 {
+		_ = g.DB().Model("bm_contacts").Ctx(ctx).
+			Fields("group_id, active, count(*) as count").
+			WhereIn("group_id", groupIds).
+			Group("group_id, active").
+			Scan(&counts)
+	}
+	countMap := make(map[string]int)
+	for _, c := range counts {
+		countMap[fmt.Sprintf("%d_%d", c.GroupId, c.Active)] = c.Count
+	}
+
+	for _, group := range groups {
+		activeCount := countMap[fmt.Sprintf("%d_1", group.Id)]
+		unsubscribeCount := countMap[fmt.Sprintf("%d_0", group.Id)]
 
 		// If the group token is empty, generate a new token
 		if group.Token == "" {

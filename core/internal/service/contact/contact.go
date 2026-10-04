@@ -401,12 +401,20 @@ func GetGroupContactCount(ctx context.Context, groupIds []int) (int, error) {
 		return 0, nil
 	}
 
+	// For a single group, within-group emails are already unique due to unique(group_id, email) constraint
+	if len(groupIds) == 1 {
+		return g.DB().Model("bm_contacts").Ctx(ctx).
+			Where("group_id", groupIds[0]).
+			Where("active", 1).
+			Count()
+	}
+
 	// Query the total number of unique contacts across the specified groups
 	var result struct {
 		Count int `json:"count"`
 	}
 
-	err := g.DB().Model("bm_contacts").
+	err := g.DB().Model("bm_contacts").Ctx(ctx).
 		Fields("COUNT(DISTINCT email) as count").
 		WhereIn("group_id", groupIds).
 		Where("active", 1). // Only count active contacts

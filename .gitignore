@@ -91,3 +91,4 @@ conf/supplier/*
 !conf/supplier/template/
 
 
+*.svbin
