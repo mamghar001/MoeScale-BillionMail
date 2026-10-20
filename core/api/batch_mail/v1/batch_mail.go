@@ -47,6 +47,7 @@ type EmailTask struct {
 	UseTagFilter            int       `json:"use_tag_filter" dc:"Whether to use tag filter (1: yes, 0: no)"`
 	TagLogic                string    `json:"tag_logic" dc:"Tag logic (AND: must have all tags, OR: have any tag, NOT)"`
 	TagIdsRaw               string    `json:"-"              dc:"Tag IDs raw data for internal processing"`
+	RotateSenders           int       `json:"rotate_senders" dc:"Rotate through ALL mailboxes (all domains) (0: no, 1: yes)"`
 	SendingWindowEnabled    int       `json:"sending_window_enabled" dc:"enable business hours sending window"`
 	SendingWindowStart      string    `json:"sending_window_start" dc:"sending window start time (HH:mm)"`
 	SendingWindowEnd        string    `json:"sending_window_end" dc:"sending window end time (HH:mm)"`
@@ -325,3 +326,33 @@ type SetBusinessHoursReq struct {
 type SetBusinessHoursRes struct {
 	api_v1.StandardRes
 }
+
+type TaskSamplePreviewReq struct {
+	g.Meta        `path:"/batch_mail/task/sample_preview" method:"get" tags:"BatchMail" summary:"generate a rendered sample email preview for a task"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	Id            int    `json:"id" v:"required" dc:"task id"`
+	Seed          int64  `json:"seed" dc:"optional seed for varying spintax/prospect pick"`
+}
+
+type TaskSamplePreviewData struct {
+	TaskId           int                    `json:"task_id"`
+	TaskName         string                 `json:"task_name"`
+	TemplateId       int                    `json:"template_id"`
+	TemplateName     string                 `json:"template_name"`
+	SenderEmail      string                 `json:"sender_email"`
+	SenderName       string                 `json:"sender_name"`
+	RotateSenders    int                    `json:"rotate_senders"`
+	RecipientEmail   string                 `json:"recipient_email"`
+	RecipientName    string                 `json:"recipient_name"`
+	RecipientAttribs map[string]interface{} `json:"recipient_attribs"`
+	RawSubject       string                 `json:"raw_subject"`
+	RenderedSubject  string                 `json:"rendered_subject"`
+	RawContent       string                 `json:"raw_content"`
+	RenderedContent  string                 `json:"rendered_content"`
+}
+
+type TaskSamplePreviewRes struct {
+	api_v1.StandardRes
+	Data TaskSamplePreviewData `json:"data"`
+}
+

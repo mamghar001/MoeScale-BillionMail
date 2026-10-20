@@ -27,4 +27,6 @@ type ISettingsV1 interface {
 	SetBlacklistAutoScan(ctx context.Context, req *v1.SetBlacklistAutoScanReq) (res *v1.SetBlacklistAutoScanRes, err error)
 	SetBlacklistAlert(ctx context.Context, req *v1.SetBlacklistAlertReq) (res *v1.SetBlacklistAlertRes, err error)
 	SetBlacklistAlertSettings(ctx context.Context, req *v1.SetBlacklistAlertSettingsReq) (res *v1.SetBlacklistAlertSettingsRes, err error)
+	GetCircuitBreaker(ctx context.Context, req *v1.GetCircuitBreakerReq) (res *v1.GetCircuitBreakerRes, err error)
+	SetCircuitBreaker(ctx context.Context, req *v1.SetCircuitBreakerReq) (res *v1.SetCircuitBreakerRes, err error)
 }

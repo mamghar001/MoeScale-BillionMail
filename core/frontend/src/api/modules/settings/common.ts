@@ -133,3 +133,15 @@ export const setBlacklistAlertSettings = (params: {
 		},
 	})
 }
+
+export const getCircuitBreaker = () => {
+	return instance.get('/settings/get_circuit_breaker')
+}
+
+export const setCircuitBreaker = (params: { enabled?: boolean; threshold?: number }) => {
+	return instance.post('/settings/set_circuit_breaker', params, {
+		fetchOptions: {
+			successMessage: true,
+		},
+	})
+}

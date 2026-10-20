@@ -23,6 +23,8 @@
 			<RetentionTime />
 			<n-divider />
 			<BusinessHoursSettings />
+			<n-divider />
+			<CircuitBreakerSettings />
 		</div>
 	</n-card>
 </template>
@@ -35,4 +37,5 @@ import ProxySettings from './ProxySettings.vue'
 import ApiSettings from './ApiSettings.vue'
 import RetentionTime from './System/RetentionTime.vue'
 import BusinessHoursSettings from './BusinessHoursSettings.vue'
+import CircuitBreakerSettings from './CircuitBreakerSettings.vue'
 </script>

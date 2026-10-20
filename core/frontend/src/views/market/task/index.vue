@@ -41,7 +41,7 @@
 import { DataTableColumns, NButton, NFlex, NProgress, NTag } from 'naive-ui'
 import { useModal } from '@/hooks/modal/useModal'
 import { useTableData } from '@/hooks/useTableData'
-import { confirm, formatDurationHighest, formatTime } from '@/utils'
+import { confirm, formatDurationHighest } from '@/utils'
 import { deleteTask, getTaskList, pauseTask, resumeTask } from '@/api/modules/market/task'
 import type { Task, TaskParams } from './interface'
 
@@ -66,27 +66,16 @@ const { loading, tableParams, tableList, tableTotal, getTableData } = useTableDa
 // Table columns
 const columns = ref<DataTableColumns<Task>>([
 	{
-		key: 'create_time',
-		title: t('market.task.columns.time'),
-		width: '9%',
-		minWidth: 130,
-		ellipsis: {
-			tooltip: true,
-		},
-		render: row => formatTime(row.create_time),
+		key: 'id',
+		title: t('market.task.columns.id'),
+		width: '6%',
+		minWidth: 70,
+		render: row => <span class="font-mono font-semibold">#{row.id}</span>,
 	},
 	{
 		key: 'subject',
 		title: t('market.task.columns.subject'),
-		minWidth: 120,
-		ellipsis: {
-			tooltip: true,
-		},
-	},
-	{
-		key: 'addresser',
-		title: t('market.task.columns.sender'),
-		minWidth: 130,
+		minWidth: 150,
 		ellipsis: {
 			tooltip: true,
 		},
@@ -125,7 +114,13 @@ const columns = ref<DataTableColumns<Task>>([
 		width: '8%',
 		minWidth: 90,
 		render: row => {
-			if (row.task_process === 0 || row.task_process === 3)
+			if (row.task_process === 3 || row.pause === 1)
+				return (
+					<NTag size="small" bordered={false} type="error">
+						{t('market.task.status.paused')}
+					</NTag>
+				)
+			if (row.task_process === 0)
 				return (
 					<NTag size="small" bordered={false} type="warning">
 						{t('market.task.status.pending')}
@@ -198,7 +193,7 @@ const columns = ref<DataTableColumns<Task>>([
 		title: t('common.columns.actions'),
 		key: 'actions',
 		align: 'right',
-		width: 250,
+		width: 290,
 		render: row => (
 			<NFlex inline={true}>
 				{row.task_process !== 2 && (
@@ -231,16 +226,14 @@ const columns = ref<DataTableColumns<Task>>([
 					}}>
 					{t('market.task.actions.analytics')}
 				</NButton>
-				{row.task_process === 2 && (
-					<NButton
-						type="primary"
-						text={true}
-						onClick={() => {
-							handleDetail(row)
-						}}>
-						{t('market.task.actions.detail')}
-					</NButton>
-				)}
+				<NButton
+					type="primary"
+					text={true}
+					onClick={() => {
+						handleDetail(row)
+					}}>
+					{t('market.task.actions.detail')}
+				</NButton>
 				<NButton
 					type="primary"
 					text={true}

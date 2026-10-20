@@ -13,6 +13,8 @@ virtual_mailbox_domains = proxy:pgsql:/etc/postfix/sql/pgsql_virtual_domains_map
 virtual_alias_maps = proxy:pgsql:/etc/postfix/sql/pgsql_virtual_alias_maps.cf, proxy:pgsql:/etc/postfix/sql/pgsql_virtual_alias_domain_catchall_maps.cf, proxy:pgsql:/etc/postfix/sql/pgsql_virtual_alias_domain_mailbox_maps.cf
 virtual_mailbox_maps = proxy:pgsql:/etc/postfix/sql/pgsql_virtual_mailbox_maps.cf, proxy:pgsql:/etc/postfix/sql/pgsql_virtual_alias_domain_catchall_maps.cf
 virtual_transport = lmtp:inet:127.0.0.1:26
+lmtp_destination_concurrency_limit = 2
+lmtp_destination_recipient_limit = 1
 
 # SMTPD restrictions - simple form
 smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination

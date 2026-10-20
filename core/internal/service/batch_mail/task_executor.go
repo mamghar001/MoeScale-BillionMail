@@ -12,6 +12,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"strconv"
 	"strings"
@@ -287,7 +288,7 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 	// create worker pool
 	poolSize := task.Threads
 	if poolSize <= 0 {
-		poolSize = 6
+		poolSize = 16 // Auto starts at 16 workers, dynamically tunes up to 32
 	}
 
 	// detailed record thread parameters
@@ -416,8 +417,15 @@ func (e *TaskExecutor) Stop() {
 
 // PauseTask
 func (e *TaskExecutor) PauseTask(taskId int) error {
-	// if already paused, return immediately
+	// Always ensure the database and UI reflect the paused state immediately
+	if err := UpdateTaskPauseStatus(context.Background(), taskId, true); err != nil {
+		return fmt.Errorf("failed to update task pause status: %w", err)
+	}
+
+	// If already marked paused in memory (e.g. failure rate cooldown), reset any stranded records and return
 	if e.isPaused.Load() {
+		resetCount, _ := e.resetFetchedRecords(taskId)
+		g.Log().Infof(context.Background(), "Task %d was already paused in memory; database pause status saved, reset %d records", taskId, resetCount)
 		return nil
 	}
 
@@ -432,12 +440,6 @@ func (e *TaskExecutor) PauseTask(taskId int) error {
 	if err != nil {
 		e.isPaused.Store(false)
 		return fmt.Errorf("failed to reset fetched records: %w", err)
-	}
-
-	// update database status
-	if err := UpdateTaskPauseStatus(context.Background(), taskId, true); err != nil {
-		e.isPaused.Store(false) // restore status
-		return fmt.Errorf("failed to update task pause status: %w", err)
 	}
 
 	g.Log().Infof(context.Background(), "Task %d paused successfully, reset %d fetched records", taskId, resetCount)
@@ -476,16 +478,15 @@ func (e *TaskExecutor) resetFetchedRecords(taskId int) (int64, error) {
 }
 
 func (e *TaskExecutor) ResumeTask(taskId int) error {
-	// if not paused, return immediately
-	if !e.isPaused.Load() {
-		return nil
+	// Always ensure database reflects running status (pause = 0, task_process = 1)
+	if err := UpdateTaskPauseStatus(context.Background(), taskId, false); err != nil {
+		return fmt.Errorf("failed to update task resume status: %w", err)
 	}
 
 	// Reload task configuration (to obtain the latest modifications)
 	g.Log().Infof(context.Background(), "Task %d: reloading config before resume...", taskId)
 	if err := e.reloadTaskConfig(taskId); err != nil {
 		g.Log().Errorf(context.Background(), "Failed to reload task config: %v", err)
-		return fmt.Errorf("failed to reload task config: %w", err)
 	}
 
 	// restore running status
@@ -496,15 +497,9 @@ func (e *TaskExecutor) ResumeTask(taskId int) error {
 	case e.resumeChan <- struct{}{}:
 		// successfully send resume signal
 	default:
-		// channel may be full, recreate
+		// channel may be full or blocked, recreate and push
 		e.resumeChan = make(chan struct{}, 1)
 		e.resumeChan <- struct{}{}
-	}
-
-	// update database status
-	if err := UpdateTaskPauseStatus(context.Background(), taskId, false); err != nil {
-		e.isPaused.Store(true) // restore status
-		return fmt.Errorf("failed to update task resume status: %w", err)
 	}
 
 	g.Log().Info(context.Background(), "Task %d resumed successfully with updated config", taskId)
@@ -521,18 +516,31 @@ func (e *TaskExecutor) getTaskIdFromContext(ctx context.Context) (int, error) {
 	return 0, errors.New("task id not found in context")
 }
 
-// configureRateController
+// configureRateController initializes the send rate controller with smart dynamic defaults
 func (e *TaskExecutor) configureRateController(task *entity.EmailTask) {
-	// Spreads the send count smoothly over 10 hours (600 minutes)
-	maxPerMinute := (task.RecipientCount + 599) / 600
-	if maxPerMinute < 10 {
-		maxPerMinute = 10
+	var maxPerMinute int
+	if task.Threads <= 0 {
+		// Smart Auto Mode: Start at a healthy baseline (~2/sec across 254 IPs)
+		if task.RecipientCount < 500 {
+			maxPerMinute = 30
+		} else if task.RecipientCount < 2000 {
+			maxPerMinute = 60
+		} else {
+			maxPerMinute = 120
+		}
+	} else {
+		// Manual threads: baseline proportional to threads
+		maxPerMinute = task.Threads * 12
+		if maxPerMinute < 30 {
+			maxPerMinute = 30
+		}
+		if maxPerMinute > 350 {
+			maxPerMinute = 350
+		}
 	}
-	if maxPerMinute > 300 {
-		maxPerMinute = 300
-	}
-	g.Log().Info(context.Background(), "task %d (recipients: %d): initialize send rate - max %d emails per minute (targeted 10-hour spread), threads: %d",
-		task.Id, task.RecipientCount, maxPerMinute, task.Threads)
+
+	g.Log().Infof(context.Background(), "task %d (recipients: %d): initialize dynamic send rate - initial %d emails per minute, threads: %d (auto=%v)",
+		task.Id, task.RecipientCount, maxPerMinute, task.Threads, task.Threads <= 0)
 	e.rateController = NewSimpleRateController(maxPerMinute)
 }
 
@@ -619,12 +627,20 @@ func (e *TaskExecutor) processTaskRecipients(ctx context.Context, task *entity.E
 		}
 
 		// check pause status
-		if e.isPaused.Load() {
+		taskCheck, _ := GetTaskInfo(ctx, task.Id)
+		if (taskCheck != nil && (taskCheck.Pause == 1 || taskCheck.TaskProcess != 1)) || e.isPaused.Load() {
+			e.isPaused.Store(true)
 			g.Log().Debug(ctx, "Task %d is paused, waiting for resume signal", task.Id)
 
 			// wait for resume signal
 			select {
 			case <-e.resumeChan:
+				// verify it wasn't resumed while still marked paused in DB
+				freshTask, _ := GetTaskInfo(ctx, task.Id)
+				if freshTask != nil && (freshTask.Pause == 1 || freshTask.TaskProcess != 1) {
+					e.isPaused.Store(true)
+					continue
+				}
 
 				if e.taskConfig != nil {
 					g.Log().Infof(ctx, "Using updated task config after resume: addresser=%s, subject=%s, template_id=%d, full_name=%s",
@@ -792,6 +808,14 @@ func (e *TaskExecutor) getNextRecipientBatch(ctx context.Context, taskId, lastId
 		}
 	}
 
+	// Shuffle activeRecipients in memory to interleave domains for both new and resumed tasks
+	if len(activeRecipients) > 1 {
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		r.Shuffle(len(activeRecipients), func(i, j int) {
+			activeRecipients[i], activeRecipients[j] = activeRecipients[j], activeRecipients[i]
+		})
+	}
+
 	return activeRecipients, nil
 }
 
@@ -930,11 +954,9 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 		err := e.pool.Submit(func() {
 			defer e.wg.Done()
 			defer sendWg.Done()
-			// personalize content
-			personalized, _ := e.personalizeEmail(ctx, emailContent, task, recipientBak)
 
-			// send email
-			result := e.sendEmail(ctx, task, recipientBak, personalized)
+			// send email (sendEmail handles per-recipient rotated sender selection and personalization)
+			result := e.sendEmail(ctx, task, recipientBak, emailContent)
 
 			// record send
 			e.rateController.RecordSend()
@@ -1168,14 +1190,27 @@ func (e *TaskExecutor) personalizeEmail(ctx context.Context, content string, tas
 	}
 
 	var emailtask entity.EmailTask
-	err := g.DB().Model("email_tasks").Where("id", task.Id).Scan(&emailtask)
-	if err != nil {
-		g.Log().Error(ctx, "get task info failed: %v", err)
+	if task != nil {
 		emailtask = *task
+	}
+	if emailtask.Subject == "" || emailtask.TemplateId == 0 {
+		if task != nil && task.Id > 0 {
+			var dbTask entity.EmailTask
+			if err := g.DB().Model("email_tasks").Where("id", task.Id).Scan(&dbTask); err == nil {
+				if emailtask.Addresser != "" {
+					dbTask.Addresser = emailtask.Addresser
+				}
+				if emailtask.FullName != "" {
+					dbTask.FullName = emailtask.FullName
+				}
+				emailtask = dbTask
+			}
+		}
 	}
 
 	// Unsubscribe
 	var renderedContent, renderedSubject string
+	var err error
 	engine := GetTemplateEngine()
 
 	if task.Unsubscribe == 1 {
@@ -1271,10 +1306,8 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 		currentTask = e.taskConfig
 	}
 
-	// get rendered content and subject
-	renderedContent, renderedSubject := e.personalizeEmail(ctx, content, currentTask, recipient)
-
-	// Determine sender email and name (with rotation if enabled)
+	// Create an effective task copy so rotated sender email & display name are available for personalization
+	effectiveTask := *currentTask
 	senderEmail := currentTask.Addresser
 	senderName := currentTask.FullName
 
@@ -1292,9 +1325,16 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 			// Select mailbox based on recipient ID for consistent rotation
 			selected := selectRotatedSender(healthyMailboxes, recipient.Id)
 			senderEmail = selected.Username
-			senderName = selected.FullName
+			if strings.TrimSpace(selected.FullName) != "" {
+				senderName = strings.TrimSpace(selected.FullName)
+			}
+			effectiveTask.Addresser = senderEmail
+			effectiveTask.FullName = senderName
 		}
 	}
+
+	// get rendered content and subject using effective rotated sender details
+	renderedContent, renderedSubject := e.personalizeEmail(ctx, content, &effectiveTask, recipient)
 
 	sender, err := mail_service.NewEmailSenderWithLocal(senderEmail)
 	if err != nil {
@@ -1366,10 +1406,8 @@ func (e *TaskExecutor) sendEmailMock(ctx context.Context, task *entity.EmailTask
 		// Continue execution
 	}
 
-	// Get the rendered content and subject
-	renderedContent, renderedSubject := e.personalizeEmail(ctx, content, task, recipient)
-
-	// Determine sender email and name (with rotation if enabled)
+	// Create an effective task copy so rotated sender email & display name are available for personalization
+	effectiveTask := *task
 	senderEmail := task.Addresser
 	senderName := task.FullName
 
@@ -1382,9 +1420,16 @@ func (e *TaskExecutor) sendEmailMock(ctx context.Context, task *entity.EmailTask
 			// Select mailbox based on recipient ID for consistent rotation
 			selected := selectRotatedSender(mailboxes, recipient.Id)
 			senderEmail = selected.Username
-			senderName = selected.FullName
+			if strings.TrimSpace(selected.FullName) != "" {
+				senderName = strings.TrimSpace(selected.FullName)
+			}
+			effectiveTask.Addresser = senderEmail
+			effectiveTask.FullName = senderName
 		}
 	}
+
+	// Get the rendered content and subject
+	renderedContent, renderedSubject := e.personalizeEmail(ctx, content, &effectiveTask, recipient)
 
 	sender, err := mail_service.NewEmailSenderWithLocal(senderEmail)
 	if err != nil {
@@ -1780,14 +1825,20 @@ func getOutboundIPForRecipient(ctx context.Context, task *entity.EmailTask, reci
 }
 
 func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) {
+	// 0. Check dynamic settings: Is circuit breaker enabled?
+	var circuitBreakerEnabled bool = true
+	if err := public.OptionsMgrInstance.GetOption(ctx, "circuit_breaker_enabled", &circuitBreakerEnabled); err == nil && !circuitBreakerEnabled {
+		return // Circuit breaker is disabled
+	}
+
 	// 1. Get configuration thresholds from env
-	throttleThresholdStr := public.MustGetDockerEnv("BOUNCE_THROTTLE_THRESHOLD", "0.05") // 5%
-	pauseThresholdStr := public.MustGetDockerEnv("BOUNCE_PAUSE_THRESHOLD", "0.10")       // 10%
+	throttleThresholdStr := public.MustGetDockerEnv("BOUNCE_THROTTLE_THRESHOLD", "0.08") // 8%
+	pauseThresholdStr := public.MustGetDockerEnv("BOUNCE_PAUSE_THRESHOLD", "0.15")       // 15%
 	throttleFactorStr := public.MustGetDockerEnv("BOUNCE_THROTTLE_FACTOR", "0.50")       // 50%
 
 	// Parse values
-	throttleThreshold := 0.05
-	pauseThreshold := 0.10
+	throttleThreshold := 0.08
+	pauseThreshold := 0.15
 	throttleFactor := 0.50
 	if v, err := strconv.ParseFloat(throttleThresholdStr, 64); err == nil {
 		throttleThreshold = v
@@ -1799,23 +1850,43 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 		throttleFactor = v
 	}
 
-	// 2. Query total sent and bounced/deferred in the last 15 minutes for this task
+	// Dynamic override for threshold from OptionsMgrInstance if set (e.g. 0.10, 0.15, 0.20)
+	var customThreshold float64
+	if err := public.OptionsMgrInstance.GetOption(ctx, "circuit_breaker_threshold", &customThreshold); err == nil && customThreshold > 0 {
+		pauseThreshold = customThreshold
+	}
+
+	// 2. Query total sent, true bad email bounces, and soft deferrals in the last 15 minutes for this task
 	now := time.Now().Unix()
 	timeWindow := int64(900) // 15 minutes
 
 	var stats struct {
-		Total  int `json:"total"`
-		Failed int `json:"failed"`
+		Total       int `json:"total"`
+		HardBounces int `json:"hard_bounces"`
+		SoftDefers  int `json:"soft_defers"`
 	}
 
 	// We join mailstat_send_mails with mailstat_message_ids and recipient_info
+	// Differentiating true invalid email bounces from external IP blocks (S3150) and temporary deferrals (4.x.x)
 	err := g.DB().Model("mailstat_send_mails sm").
 		Ctx(ctx).
 		InnerJoin("mailstat_message_ids mi", "sm.postfix_message_id=mi.postfix_message_id").
 		InnerJoin("recipient_info r", "mi.message_id=r.message_id").
 		Where("r.task_id", taskId).
 		Where("sm.log_time >= ?", now-timeWindow).
-		Fields("COUNT(*) as total, SUM(CASE WHEN sm.status IN ('bounced', 'deferred') THEN 1 ELSE 0 END) as failed").
+		Fields("COUNT(*) as total, " +
+			"SUM(CASE WHEN (sm.dsn IN ('5.1.1','5.1.2','5.1.3') " +
+			"OR sm.description ILIKE '%user unknown%' " +
+			"OR sm.description ILIKE '%NoSuchUser%' " +
+			"OR sm.description ILIKE '%invalid recipient%' " +
+			"OR sm.description ILIKE '%does not exist%' " +
+			"OR sm.description ILIKE '%No such user%' " +
+			"OR sm.description ILIKE '%mailbox unavailable%') " +
+			"AND NOT (sm.description ILIKE '%S3150%' " +
+			"OR sm.description ILIKE '%block list%' " +
+			"OR sm.description ILIKE '%Local Policy Violation%' " +
+			"OR sm.description ILIKE '%Cloudmark%') THEN 1 ELSE 0 END) as hard_bounces, " +
+			"SUM(CASE WHEN sm.status = 'deferred' OR sm.dsn LIKE '4.%' THEN 1 ELSE 0 END) as soft_defers").
 		Scan(&stats)
 
 	if err != nil {
@@ -1823,18 +1894,25 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 		return
 	}
 
-	if stats.Total < 30 || stats.Failed < 5 { // not enough emails or failures to determine a statistically valid pattern
-		return
+	if stats.Total < 30 {
+		return // not enough sample data yet
 	}
 
-	failureRate := float64(stats.Failed) / float64(stats.Total)
-	g.Log().Infof(ctx, "Campaign %d: Last 15m stats - sent: %d, failures: %d, failure rate: %.2f%%",
-		taskId, stats.Total, stats.Failed, failureRate*100)
+	hardBounceRate := float64(stats.HardBounces) / float64(stats.Total)
+	softDeferRate := float64(stats.SoftDefers) / float64(stats.Total)
 
-	// 3. Apply logic
-	if failureRate >= pauseThreshold {
-		g.Log().Warningf(ctx, "Campaign %d failure rate (%.2f%%) exceeds pause threshold (%.2f%%). Pausing for 1 hour.",
-			taskId, failureRate*100, pauseThreshold*100)
+	g.Log().Infof(ctx, "Campaign %d: Last 15m stats - sent: %d, hard bounces: %d (%.2f%%), soft defers: %d (%.2f%%)",
+		taskId, stats.Total, stats.HardBounces, hardBounceRate*100, stats.SoftDefers, softDeferRate*100)
+
+	// 3. Smart Dynamic Auto-Scaling & PMTA-Style Backoff
+	task, _ := GetTaskInfo(ctx, taskId)
+	isAuto := (task == nil || task.Threads <= 0)
+	currentRate := e.rateController.GetMaxRate()
+
+	if stats.HardBounces >= 8 && hardBounceRate >= pauseThreshold {
+		// Hard bounce spike: Circuit breaker activates to protect domain & IP reputation
+		g.Log().Warningf(ctx, "Campaign %d HARD bounce rate (%.2f%%) exceeds pause threshold (%.2f%%). Pausing campaign.",
+			taskId, hardBounceRate*100, pauseThreshold*100)
 
 		// Set pause state
 		e.isPaused.Store(true)
@@ -1842,8 +1920,17 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 		// Reset any fetched records that weren't sent so they aren't lost
 		_, _ = e.resetFetchedRecords(taskId)
 
+		// Persist pause status in database so campaign is visibly and persistently paused in UI & DB
+		_ = UpdateTaskPauseStatus(context.Background(), taskId, true)
+
 		go func() {
 			time.Sleep(1 * time.Hour)
+			// Check if task was manually paused before auto-resuming
+			currentTask, _ := GetTaskInfo(context.Background(), taskId)
+			if currentTask != nil && (currentTask.Pause == 1 || currentTask.TaskProcess != 1) {
+				g.Log().Infof(context.Background(), "Campaign %d was manually paused (pause=%d, process=%d), skipping auto-resume after cooldown", taskId, currentTask.Pause, currentTask.TaskProcess)
+				return
+			}
 			g.Log().Infof(ctx, "Auto-resuming campaign %d after cooldown", taskId)
 			e.isPaused.Store(false)
 			select {
@@ -1851,51 +1938,84 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 			default:
 			}
 		}()
-	} else if failureRate >= throttleThreshold {
-		// Calculate dynamic throttled rate limit
-		task, _ := GetTaskInfo(ctx, taskId)
-		if task != nil {
-			normalMaxPerMinute := (task.RecipientCount + 599) / 600
-			if normalMaxPerMinute < 10 {
-				normalMaxPerMinute = 10
+	} else if (stats.HardBounces >= 3 && hardBounceRate >= throttleThreshold) || (stats.SoftDefers >= 5 && softDeferRate >= 0.20) {
+		// Heavy greylisting or bounce pressure: 50% backoff
+		throttledRate := int(float64(currentRate) * throttleFactor)
+		if throttledRate < 30 {
+			throttledRate = 30
+		}
+
+		g.Log().Warningf(ctx, "Campaign %d heavy soft deferrals (%.2f%%) or hard bounces (%.2f%%). Dynamic throttling rate to %d/min (was %d/min).",
+			taskId, softDeferRate*100, hardBounceRate*100, throttledRate, currentRate)
+		e.rateController.SetMaxPerMinute(throttledRate)
+
+		if isAuto && e.pool != nil && e.pool.Cap() > 8 {
+			newCap := e.pool.Cap() / 2
+			if newCap < 8 {
+				newCap = 8
 			}
-			if normalMaxPerMinute > 300 {
-				normalMaxPerMinute = 300
+			e.pool.Tune(newCap)
+			g.Log().Warningf(ctx, "Campaign %d: Tuned worker pool down to %d threads during pushback.", taskId, newCap)
+		}
+	} else if stats.SoftDefers >= 5 && softDeferRate >= 0.10 {
+		// Mild greylisting: 25% backoff
+		throttledRate := int(float64(currentRate) * 0.75)
+		if throttledRate < 45 {
+			throttledRate = 45
+		}
+
+		g.Log().Warningf(ctx, "Campaign %d mild greylisting (%.2f%% defers). Backing off rate to %d/min (was %d/min).",
+			taskId, softDeferRate*100, throttledRate, currentRate)
+		e.rateController.SetMaxPerMinute(throttledRate)
+
+		if isAuto && e.pool != nil && e.pool.Cap() > 12 {
+			e.pool.Tune(12)
+		}
+	} else if hardBounceRate < 0.02 && softDeferRate < 0.05 {
+		// Pristine Deliverability: Scale UP!
+		if isAuto {
+			acceleratedRate := int(float64(currentRate) * 1.25)
+			if acceleratedRate < 120 {
+				acceleratedRate = 120
 			}
-			throttledRate := int(float64(normalMaxPerMinute) * throttleFactor)
-			if throttledRate < 5 {
-				throttledRate = 5
+			if acceleratedRate > 350 {
+				acceleratedRate = 350
 			}
 
-			g.Log().Warningf(ctx, "Campaign %d failure rate (%.2f%%) exceeds throttle threshold (%.2f%%). Throttling rate to %d/min (was %d/min).",
-				taskId, failureRate*100, throttleThreshold*100, throttledRate, normalMaxPerMinute)
+			if acceleratedRate != currentRate {
+				g.Log().Infof(ctx, "Campaign %d pristine deliverability (hard: %.2f%%, soft: %.2f%%). Dynamic auto-accelerating rate to %d/min (was %d/min).",
+					taskId, hardBounceRate*100, softDeferRate*100, acceleratedRate, currentRate)
+				e.rateController.SetMaxPerMinute(acceleratedRate)
+			}
 
-			e.rateController.SetMaxPerMinute(throttledRate)
+			if e.pool != nil && e.pool.Cap() < 32 {
+				newCap := e.pool.Cap() + 4
+				if newCap > 32 {
+					newCap = 32
+				}
+				e.pool.Tune(newCap)
+				g.Log().Infof(ctx, "Campaign %d: Dynamic auto-scaling worker pool up to %d threads.", taskId, newCap)
+			}
 		}
 	} else {
-		// Reset to normal rate limit
-		task, _ := GetTaskInfo(ctx, taskId)
-		if task != nil {
-			normalMaxPerMinute := (task.RecipientCount + 599) / 600
-			if normalMaxPerMinute < 10 {
-				normalMaxPerMinute = 10
-			}
-			if normalMaxPerMinute > 300 {
-				normalMaxPerMinute = 300
-			}
-			if e.rateController.GetMaxRate() != normalMaxPerMinute {
-				g.Log().Infof(ctx, "Campaign %d failure rate is healthy (%.2f%%). Restoring normal rate to %d/min.",
-					taskId, failureRate*100, normalMaxPerMinute)
-				e.rateController.SetMaxPerMinute(normalMaxPerMinute)
-			}
+		// Stable / Balanced: Ensure rate is at least healthy baseline
+		baseline := 120
+		if task != nil && task.Threads > 0 {
+			baseline = task.Threads * 12
+		}
+		if currentRate < baseline {
+			g.Log().Infof(ctx, "Campaign %d deliverability healthy (hard: %.2f%%, soft: %.2f%%). Restoring rate towards baseline %d/min.",
+				taskId, hardBounceRate*100, softDeferRate*100, baseline)
+			e.rateController.SetMaxPerMinute(baseline)
 		}
 	}
 
-	// 4. Query failure rate per IP and place failing IPs on 2-hour cooldown
+	// 4. Query fail and defer rate per outbound IP and cool down affected IPs
 	var ipStats []struct {
 		OutboundIp string `json:"outbound_ip"`
 		Total      int    `json:"total"`
 		Failed     int    `json:"failed"`
+		Deferred   int    `json:"deferred"`
 	}
 	err = g.DB().Model("mailstat_send_mails sm").
 		Ctx(ctx).
@@ -1903,16 +2023,22 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 		InnerJoin("bm_multi_ip_domain d", "substring(sn.sender from '@(.*)$') = d.domain").
 		Where("sm.log_time >= ?", now-timeWindow).
 		Group("d.outbound_ip").
-		Fields("d.outbound_ip, COUNT(*) as total, SUM(CASE WHEN sm.status IN ('bounced', 'deferred') THEN 1 ELSE 0 END) as failed").
+		Fields("d.outbound_ip, COUNT(*) as total, " +
+			"SUM(CASE WHEN sm.status = 'bounced' OR sm.dsn LIKE '5.%' THEN 1 ELSE 0 END) as failed, " +
+			"SUM(CASE WHEN sm.status = 'deferred' OR sm.dsn LIKE '4.%' THEN 1 ELSE 0 END) as deferred").
 		Scan(&ipStats)
 
 	if err == nil {
 		for _, stat := range ipStats {
-			if stat.Total >= 20 {
-				rate := float64(stat.Failed) / float64(stat.Total)
-				if rate >= pauseThreshold {
-					g.Log().Warningf(ctx, "[COOLDOWN] IP %s failure rate (%.2f%%) exceeds pause threshold (%.2f%%). Placing on 2-hour cooldown.", stat.OutboundIp, rate*100, pauseThreshold*100)
+			if stat.Total >= 15 {
+				bounceRate := float64(stat.Failed) / float64(stat.Total)
+				deferRate := float64(stat.Deferred) / float64(stat.Total)
+				if bounceRate >= pauseThreshold {
+					g.Log().Warningf(ctx, "[COOLDOWN] IP %s hard bounce rate (%.2f%%) exceeds pause threshold. Placing on 2-hour cooldown.", stat.OutboundIp, bounceRate*100)
 					_ = g.Redis().SetEX(ctx, "ip:cooldown:"+stat.OutboundIp, "1", 7200)
+				} else if deferRate >= 0.35 {
+					g.Log().Warningf(ctx, "[COOLDOWN] IP %s elevated soft deferral rate (%.2f%%). Cooling down for 15 minutes to let destination queues clear.", stat.OutboundIp, deferRate*100)
+					_ = g.Redis().SetEX(ctx, "ip:cooldown:"+stat.OutboundIp, "1", 900)
 				}
 			}
 		}

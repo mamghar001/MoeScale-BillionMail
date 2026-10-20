@@ -154,13 +154,8 @@ func (o *Overview) Overview(campaignID int64, domain string, startTime, endTime 
 func (o *Overview) overviewDashboard(campaignID int64, domain string, startTime, endTime int64) map[string]interface{} {
 	query := o.buildBaseQuery(campaignID, domain, startTime, endTime)
 
-	query.LeftJoin("(SELECT DISTINCT postfix_message_id FROM mailstat_opened) o", "sm.postfix_message_id = o.postfix_message_id")
-	query.LeftJoin("(SELECT DISTINCT postfix_message_id FROM mailstat_clicked) c", "sm.postfix_message_id = c.postfix_message_id")
-
 	query.Fields("count(*) as sends")
 	query.Fields("coalesce(sum(case when status='sent' and dsn like '2.%' then 1 else 0 end), 0) as delivered")
-	query.Fields("count(o.postfix_message_id) as opened")
-	query.Fields("count(c.postfix_message_id) as clicked")
 	query.Fields("coalesce(sum(case when status='bounced' then 1 else 0 end), 0) as bounced")
 
 	aggregate := map[string]interface{}{
@@ -183,6 +178,70 @@ func (o *Overview) overviewDashboard(campaignID int64, domain string, startTime,
 			continue
 		}
 		aggregate[k] = v.Int()
+	}
+
+	// Query opened and clicked directly to avoid expensive 1.6M-row hash left joins
+	if campaignID == 0 && domain == "" {
+		openedQuery := g.DB().Model("mailstat_opened")
+		if startTime > 0 {
+			openedQuery.Where("log_time_millis >= ?", startTime*1000)
+		}
+		if endTime > 0 {
+			openedQuery.Where("log_time_millis <= ?", endTime*1000)
+		}
+		if opCount, opErr := openedQuery.Fields("count(DISTINCT postfix_message_id)").Value(); opErr == nil {
+			aggregate["opened"] = opCount.Int()
+		}
+
+		clickedQuery := g.DB().Model("mailstat_clicked")
+		if startTime > 0 {
+			clickedQuery.Where("log_time_millis >= ?", startTime*1000)
+		}
+		if endTime > 0 {
+			clickedQuery.Where("log_time_millis <= ?", endTime*1000)
+		}
+		if clkCount, clkErr := clickedQuery.Fields("count(DISTINCT postfix_message_id)").Value(); clkErr == nil {
+			aggregate["clicked"] = clkCount.Int()
+		}
+	} else {
+		openedQuery := g.DB().Model("mailstat_opened o").
+			InnerJoin("mailstat_send_mails sm", "o.postfix_message_id = sm.postfix_message_id")
+		if startTime > 0 {
+			openedQuery.Where("o.log_time_millis >= ?", startTime*1000)
+		}
+		if endTime > 0 {
+			openedQuery.Where("o.log_time_millis <= ?", endTime*1000)
+		}
+		if domain != "" {
+			openedQuery.InnerJoin("mailstat_senders s", "o.postfix_message_id=s.postfix_message_id")
+			openedQuery.Where("s.sender LIKE ?", "%@"+domain)
+		}
+		if campaignID > 0 {
+			openedQuery.Where("o.campaign_id", campaignID)
+		}
+		if opCount, opErr := openedQuery.Fields("count(DISTINCT o.postfix_message_id)").Value(); opErr == nil {
+			aggregate["opened"] = opCount.Int()
+		}
+
+		clickedQuery := g.DB().Model("mailstat_clicked c").
+			InnerJoin("mailstat_send_mails sm", "c.postfix_message_id = sm.postfix_message_id")
+		if startTime > 0 {
+			clickedQuery.Where("c.log_time_millis >= ?", startTime*1000)
+		}
+		if endTime > 0 {
+			clickedQuery.Where("c.log_time_millis <= ?", endTime*1000)
+		}
+		if domain != "" {
+			clickedQuery.InnerJoin("mailstat_senders s", "c.postfix_message_id=s.postfix_message_id")
+			clickedQuery.Where("s.sender LIKE ?", "%@"+domain)
+		}
+		if campaignID > 0 {
+			clickedQuery.InnerJoin("mailstat_message_ids mi", "c.postfix_message_id=mi.postfix_message_id")
+			clickedQuery.InnerJoin(fmt.Sprintf("(SELECT message_id FROM recipient_info WHERE task_id = %d) r", campaignID), "mi.message_id=r.message_id")
+		}
+		if clkCount, clkErr := clickedQuery.Fields("count(DISTINCT c.postfix_message_id)").Value(); clkErr == nil {
+			aggregate["clicked"] = clkCount.Int()
+		}
 	}
 
 	if aggregate["sends"].(int) > 0 {
@@ -501,7 +560,7 @@ func (o *Overview) prepareChartData(startTime, endTime int64) (string, string) {
 		xAxisField = "TO_CHAR(TO_TIMESTAMP(sm.log_time_millis / 1000), 'HH24')::integer as x"
 	}
 
-	if secs >= 2592000 {
+	if secs > 7776000 {
 		columnType = "monthly"
 		xAxisField = "TO_CHAR(TO_TIMESTAMP(sm.log_time_millis / 1000), 'YYYY-MM') as x"
 	}
@@ -595,6 +654,7 @@ func (o *Overview) chartOpenRate(campaignID int64, domain string, startTime, end
 	query.Fields("case when coalesce(sum(case when status='sent' and dsn like '2.%' then 1 else 0 end), 0) > 0 then round(1.0 * count(o.postfix_message_id) / coalesce(sum(case when status='sent' and dsn like '2.%' then 1 else 0 end), 0) * 100, 2) else 0.0 end as open_rate")
 
 	query.Group("x")
+	query.Order("x")
 
 	rs, err := query.All()
 	if err != nil {
@@ -631,6 +691,7 @@ func (o *Overview) chartClickRate(campaignID int64, domain string, startTime, en
 	query.Fields("case when count(o.postfix_message_id) > 0 then round(1.0 * count(c.postfix_message_id) / count(o.postfix_message_id) * 100, 2) else 0.0 end as click_rate")
 
 	query.Group("x")
+	query.Order("x")
 
 	rs, err := query.All()
 	if err != nil {

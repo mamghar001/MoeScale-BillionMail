@@ -72,6 +72,17 @@ func (e *TemplateEngine) RenderEmailTemplateWithAPI(ctx context.Context, content
 		if contact.Attribs != nil {
 			for k, v := range contact.Attribs {
 				subscriberData[k] = v
+				lowerK := strings.ToLower(k)
+				if lowerK == "first_name" || lowerK == "firstname" {
+					subscriberData["first_name"] = v
+					subscriberData["FirstName"] = v
+				} else if lowerK == "last_name" || lowerK == "lastname" {
+					subscriberData["last_name"] = v
+					subscriberData["LastName"] = v
+				} else if lowerK == "company" || lowerK == "company_name" {
+					subscriberData["company"] = v
+					subscriberData["Company"] = v
+				}
 			}
 		}
 		subscriberData["Email"] = contact.Email
@@ -96,6 +107,9 @@ func (e *TemplateEngine) RenderEmailTemplateWithAPI(ctx context.Context, content
 		"Addresser":      "",
 		"Subject":        "",
 		"FullName":       "",
+		"FirstName":      "",
+		"LastName":       "",
+		"SenderName":     "",
 		"RecipientCount": 0,
 		"TaskProcess":    0,
 		"Pause":          0,
@@ -113,11 +127,24 @@ func (e *TemplateEngine) RenderEmailTemplateWithAPI(ctx context.Context, content
 		"Active":         0,
 	}
 	if task != nil {
+		fullName := strings.TrimSpace(task.FullName)
+		firstName := fullName
+		lastName := ""
+		if parts := strings.Fields(fullName); len(parts) > 0 {
+			firstName = parts[0]
+			if len(parts) > 1 {
+				lastName = strings.Join(parts[1:], " ")
+			}
+		}
+
 		taskData["Id"] = task.Id
 		taskData["TaskName"] = task.TaskName
 		taskData["Addresser"] = task.Addresser
 		taskData["Subject"] = task.Subject
-		taskData["FullName"] = task.FullName
+		taskData["FullName"] = fullName
+		taskData["FirstName"] = firstName
+		taskData["LastName"] = lastName
+		taskData["SenderName"] = fullName
 		taskData["RecipientCount"] = task.RecipientCount
 		taskData["TaskProcess"] = task.TaskProcess
 		taskData["Pause"] = task.Pause
@@ -134,10 +161,19 @@ func (e *TemplateEngine) RenderEmailTemplateWithAPI(ctx context.Context, content
 		taskData["Active"] = task.Active
 	}
 
+	senderData := g.Map{
+		"FullName":  taskData["FullName"],
+		"FirstName": taskData["FirstName"],
+		"LastName":  taskData["LastName"],
+		"Email":     taskData["Addresser"],
+		"Addresser": taskData["Addresser"],
+	}
+
 	// prepare template data
 	templateData := g.Map{
 		"Subscriber":     subscriberData,
 		"Task":           taskData,
+		"Sender":         senderData,
 		"UnsubscribeURL": unsubscribeURL,
 		// use the prepared apiData so API variables are available to templates
 		"API": apiData,
@@ -215,6 +251,7 @@ func (e *TemplateEngine) cleanUndefinedVariables(content string) string {
 	knownVariablePatterns := []string{
 		`\{\{\s*\.\s*Subscriber\s*\.\s*[^\s{}]+[^}]*}}`,
 		`\{\{\s*\.\s*Task\s*\.\s*[^\s{}]+[^}]*}}`,
+		`\{\{\s*\.\s*Sender\s*\.\s*[^\s{}]+[^}]*}}`,
 		`\{\{\s*\.\s*API\s*\.\s*[^\s{}]+[^}]*}}`,
 	}
 

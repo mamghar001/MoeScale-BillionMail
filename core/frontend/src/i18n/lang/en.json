@@ -249,6 +249,7 @@
 				"analytics": "Analytics"
 			},
 			"columns": {
+				"id": "ID",
 				"time": "Time",
 				"subject": "Subject",
 				"sender": "Sender",
@@ -266,7 +267,8 @@
 				"pending": "Pending",
 				"processing": "Processing",
 				"done": "Done",
-				"noIpWarmup": "No IP Warmup"
+				"noIpWarmup": "No IP Warmup",
+				"paused": "Paused"
 			},
 			"search": {
 				"subjectPlaceholder": "Search by subject"

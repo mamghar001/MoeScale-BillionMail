@@ -8,6 +8,7 @@ import (
 	"billionmail-core/internal/service/warmup"
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -535,6 +536,12 @@ func CreateTaskWithRecipients(ctx context.Context, req *v1.CreateTaskReq, addTyp
 		if len(filteredContacts) == 0 {
 			return gerror.New(public.LangCtx(ctx, "No valid contacts found after filtering"))
 		}
+
+		// Shuffle contacts so recipients across different companies and domains are evenly mixed
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		r.Shuffle(len(filteredContacts), func(i, j int) {
+			filteredContacts[i], filteredContacts[j] = filteredContacts[j], filteredContacts[i]
+		})
 
 		if err = ImportRecipientsTx(ctx, tx, taskId, filteredContacts); err != nil {
 			return gerror.New(public.LangCtx(ctx, "Failed to import recipients: {}", err.Error()))

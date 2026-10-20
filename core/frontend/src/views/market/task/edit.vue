@@ -422,6 +422,10 @@ const getParams = () => {
 		track_open: form.track_open,
 		track_click: form.track_click,
 		rotate_senders: form.rotate_senders,
+		sending_window_enabled: form.sending_window_enabled,
+		sending_window_start: form.sending_window_start,
+		sending_window_end: form.sending_window_end,
+		sending_window_tz: form.sending_window_tz,
 		addresser: form.addresser || '',
 		full_name: form.full_name,
 		subject: form.subject,
@@ -490,6 +494,8 @@ const initForm = async () => {
 		threadsType.value = res.threads === 0 ? 0 : 1
 		if (res.sending_window_enabled !== undefined) {
 			form.sending_window_enabled = res.sending_window_enabled
+		} else {
+			form.sending_window_enabled = 1
 		}
 		if (res.sending_window_start) {
 			form.sending_window_start = res.sending_window_start
@@ -504,7 +510,7 @@ const initForm = async () => {
 		form.tag_logic = res.tag_logic
 		form.track_open = res.track_open
 		form.track_click = res.track_click
-		form.rotate_senders = res.rotate_senders || 0
+		form.rotate_senders = res.rotate_senders !== undefined ? res.rotate_senders : 1
 		form.warmup = res.warmup || 0
 		nextTick(() => {
 			form.tag_ids = res.tag_ids

@@ -1,4 +1,4 @@
-require ["fileinto", "mailbox", "body"];
+require ["fileinto", "mailbox", "body", "envelope"];
 
 if anyof (
   exists "X-SP-WUP",
@@ -14,7 +14,17 @@ if anyof (
   exists "X-Smartlead-Warmup",
   exists "X-Instantly-Warmup"
 ) {
+  # Discard warmup copies delivered to all_replies catchall to protect disk I/O
+  if anyof (
+    envelope :is "to" "all_replies@b2bprosperity.com",
+    header :contains "Delivered-To" "all_replies@b2bprosperity.com",
+    header :contains "X-Original-To" "all_replies@b2bprosperity.com"
+  ) {
+    discard;
+    stop;
+  }
   fileinto :create "Warmup";
   stop;
 }
+
 

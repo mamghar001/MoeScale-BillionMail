@@ -294,3 +294,27 @@ type SetBlacklistAlertSettingsReq struct {
 type SetBlacklistAlertSettingsRes struct {
 	api_v1.StandardRes
 }
+
+type GetCircuitBreakerReq struct {
+	g.Meta        `path:"/settings/get_circuit_breaker" tags:"Settings" method:"get" summary:"Get circuit breaker settings"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+}
+
+type GetCircuitBreakerRes struct {
+	api_v1.StandardRes
+	Data struct {
+		Enabled   bool    `json:"enabled" dc:"Circuit breaker enabled switch"`
+		Threshold float64 `json:"threshold" dc:"Hard bounce rate threshold percentage"`
+	} `json:"data" dc:"Data"`
+}
+
+type SetCircuitBreakerReq struct {
+	g.Meta        `path:"/settings/set_circuit_breaker" tags:"Settings" method:"post" summary:"Set circuit breaker settings"`
+	Authorization string  `json:"authorization" dc:"Authorization" in:"header"`
+	Enabled       *bool   `json:"enabled" dc:"Circuit breaker enabled switch"`
+	Threshold     float64 `json:"threshold" dc:"Hard bounce rate threshold (e.g. 0.10, 0.15, 0.20)"`
+}
+
+type SetCircuitBreakerRes struct {
+	api_v1.StandardRes
+}

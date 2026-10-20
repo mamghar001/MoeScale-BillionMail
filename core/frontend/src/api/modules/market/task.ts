@@ -28,6 +28,11 @@ export function getTaskDetails(params: { id: number }) {
 interface TaskAddParams {
 	track_open: number
 	track_click: number
+	rotate_senders?: number
+	sending_window_enabled?: number
+	sending_window_start?: string
+	sending_window_end?: string
+	sending_window_tz?: string
 	addresser: string
 	full_name: string
 	subject: string
@@ -134,3 +139,11 @@ export function getMailProviderLogs(params: {
 }) {
 	return instance.get('/batch_mail/tracking/logs', { params })
 }
+
+/**
+ * Generate a sample rendered email preview with dynamic sender rotation, prospect attributes, and spintax
+ */
+export function getTaskSamplePreview(params: { id: number; seed?: number }) {
+	return instance.get('/batch_mail/task/sample_preview', { params })
+}
+

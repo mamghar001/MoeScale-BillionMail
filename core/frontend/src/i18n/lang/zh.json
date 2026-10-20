@@ -251,6 +251,7 @@
 				"analytics": "分析"
 			},
 			"columns": {
+				"id": "ID",
 				"time": "时间",
 				"subject": "邮件主题",
 				"sender": "发件人",
@@ -268,7 +269,8 @@
 				"pending": "等待中",
 				"processing": "处理中",
 				"done": "已完成",
-				"noIpWarmup": "未关联IP预热"
+				"noIpWarmup": "未关联IP预热",
+				"paused": "已暂停"
 			},
 			"search": {
 				"subjectPlaceholder": "搜索邮件主题"
