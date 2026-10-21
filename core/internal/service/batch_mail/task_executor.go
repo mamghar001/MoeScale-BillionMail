@@ -288,7 +288,7 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 	// create worker pool
 	poolSize := task.Threads
 	if poolSize <= 0 {
-		poolSize = 16 // Auto starts at 16 workers, dynamically tunes up to 32
+		poolSize = 8 // Auto starts with a smooth 8 concurrent workers (tuned up to 16)
 	}
 
 	// detailed record thread parameters
@@ -516,30 +516,28 @@ func (e *TaskExecutor) getTaskIdFromContext(ctx context.Context) (int, error) {
 	return 0, errors.New("task id not found in context")
 }
 
-// configureRateController initializes the send rate controller with smart dynamic defaults
+// configureRateController initializes the send rate controller with smooth organic defaults
 func (e *TaskExecutor) configureRateController(task *entity.EmailTask) {
 	var maxPerMinute int
 	if task.Threads <= 0 {
-		// Smart Auto Mode: Start at a healthy baseline (~2/sec across 254 IPs)
-		if task.RecipientCount < 500 {
+		// Smart Auto Mode: Smooth organic pacing spread over business hours
+		// Prevents sudden snowshoe/burst detection by Spamhaus and major ESPs
+		maxPerMinute = 20
+		if task.RecipientCount > 20000 {
 			maxPerMinute = 30
-		} else if task.RecipientCount < 2000 {
-			maxPerMinute = 60
-		} else {
-			maxPerMinute = 120
 		}
 	} else {
 		// Manual threads: baseline proportional to threads
-		maxPerMinute = task.Threads * 12
-		if maxPerMinute < 30 {
-			maxPerMinute = 30
+		maxPerMinute = task.Threads * 8
+		if maxPerMinute < 15 {
+			maxPerMinute = 15
 		}
-		if maxPerMinute > 350 {
-			maxPerMinute = 350
+		if maxPerMinute > 60 {
+			maxPerMinute = 60
 		}
 	}
 
-	g.Log().Infof(context.Background(), "task %d (recipients: %d): initialize dynamic send rate - initial %d emails per minute, threads: %d (auto=%v)",
+	g.Log().Infof(context.Background(), "task %d (recipients: %d): initialize smooth send rate - %d emails per minute, threads: %d (auto=%v)",
 		task.Id, task.RecipientCount, maxPerMinute, task.Threads, task.Threads <= 0)
 	e.rateController = NewSimpleRateController(maxPerMinute)
 }
@@ -677,6 +675,34 @@ func (e *TaskExecutor) processTaskRecipients(ctx context.Context, task *entity.E
 		if time.Since(e.lastStatCheckTime) >= 2*time.Minute {
 			e.lastStatCheckTime = time.Now()
 			e.checkAndAdjustRateLimit(ctx, task.Id)
+		}
+
+		// Check if fleet daily campaign limit is reached for today
+		if isGlobalDailyLimitExceeded(ctx) {
+			g.Log().Infof(ctx, "task %d: fleet daily campaign limit reached for today. Sleeping 30 minutes before checking again...", task.Id)
+			select {
+			case <-time.After(30 * time.Minute):
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		// Check if any healthy senders are available across active IPs
+		if task.RotateSenders == 1 {
+			mailboxes, err := getAllMailboxes(ctx)
+			if err == nil && len(mailboxes) > 0 {
+				healthy := filterHealthyMailboxes(ctx, mailboxes)
+				if len(healthy) == 0 {
+					g.Log().Infof(ctx, "task %d: all active sender IPs reached their daily safe limit or cooling down. Sleeping 30 minutes...", task.Id)
+					select {
+					case <-time.After(30 * time.Minute):
+						continue
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+			}
 		}
 
 		// get a batch of recipients to send
@@ -887,8 +913,7 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 
 	// check global daily cap at batch level
 	if isGlobalDailyLimitExceeded(ctx) {
-		g.Log().Warning(ctx, "Global daily sending limit reached. Campaign paused.")
-		e.isPaused.Store(true)
+		g.Log().Warning(ctx, "Global daily sending limit reached. Campaign batch deferred.")
 		safeClose()
 		return nil
 	}
@@ -1317,10 +1342,15 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 		if err != nil {
 			g.Log().Warning(ctx, "failed to get all mailboxes: %v, using original sender", err)
 		} else if len(mailboxes) > 0 {
-			// Filter out mailboxes on IP cooldown
+			// Filter out mailboxes on IP cooldown or daily limit
 			healthyMailboxes := filterHealthyMailboxes(ctx, mailboxes)
 			if len(healthyMailboxes) == 0 {
-				healthyMailboxes = mailboxes
+				g.Log().Warningf(ctx, "task %d: no healthy mailboxes available (all IPs reached daily limit or cooling down)", currentTask.Id)
+				return &SendResult{
+					RecipientID: recipient.Id,
+					Success:     false,
+					Error:       errors.New("all active IPs reached daily campaign limit or cooling down"),
+				}
 			}
 			// Select mailbox based on recipient ID for consistent rotation
 			selected := selectRotatedSender(healthyMailboxes, recipient.Id)
@@ -1330,6 +1360,18 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 			}
 			effectiveTask.Addresser = senderEmail
 			effectiveTask.FullName = senderName
+		}
+	} else {
+		// Single sender: verify the sender's domain & IP is active, not cooling down, and not over daily cap
+		domain := extractDomain(senderEmail)
+		outboundIP := getOutboundIPForDomain(ctx, domain)
+		if outboundIP == "" || isIPCoolingDownOrCapped(ctx, outboundIP) {
+			g.Log().Warningf(ctx, "task %d: sender %s (IP %s) is inactive, cooling down, or reached daily cap", currentTask.Id, senderEmail, outboundIP)
+			return &SendResult{
+				RecipientID: recipient.Id,
+				Success:     false,
+				Error:       fmt.Errorf("sender %s (IP %s) is inactive, cooling down, or reached daily cap", senderEmail, outboundIP),
+			}
 		}
 	}
 
@@ -1383,6 +1425,9 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 			Error:       fmt.Errorf("send email failed: %w", err),
 		}
 	}
+
+	// Record campaign send for this outbound IP and update warmup history
+	recordCampaignSendForIP(ctx, senderEmail)
 
 	return &SendResult{
 		RecipientID: recipient.Id,
@@ -1789,39 +1834,17 @@ func getOutboundIPForRecipient(ctx context.Context, task *entity.EmailTask, reci
 		mailboxes, err := getAllMailboxes(ctx)
 		if err == nil && len(mailboxes) > 0 {
 			healthyMailboxes := filterHealthyMailboxes(ctx, mailboxes)
-			if len(healthyMailboxes) == 0 {
-				healthyMailboxes = mailboxes
+			if len(healthyMailboxes) > 0 {
+				selected := selectRotatedSender(healthyMailboxes, recipient.Id)
+				senderEmail = selected.Username
 			}
-			selected := selectRotatedSender(healthyMailboxes, recipient.Id)
-			senderEmail = selected.Username
 		}
 	}
 	domain := extractDomain(senderEmail)
-	if domain == "" {
-		val, err := g.DB().Model("bm_multi_ip_domain").Ctx(ctx).Where("active = 1").Value("outbound_ip")
-		if err == nil && !val.IsEmpty() {
-			return val.String()
-		}
-		return "5.230.228.116"
+	if domain != "" {
+		return getOutboundIPForDomain(ctx, domain)
 	}
-
-	var outboundIP string
-	val, err := g.DB().Model("bm_multi_ip_domain").
-		Ctx(ctx).
-		Where("domain = ? AND active = 1", domain).
-		Value("outbound_ip")
-	if err == nil && !val.IsEmpty() {
-		outboundIP = val.String()
-	}
-
-	if outboundIP == "" {
-		val, err := g.DB().Model("bm_multi_ip_domain").Ctx(ctx).Where("active = 1").Value("outbound_ip")
-		if err == nil && !val.IsEmpty() {
-			return val.String()
-		}
-		return "5.230.228.116"
-	}
-	return outboundIP
+	return ""
 }
 
 func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) {
@@ -1941,18 +1964,18 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 	} else if (stats.HardBounces >= 3 && hardBounceRate >= throttleThreshold) || (stats.SoftDefers >= 5 && softDeferRate >= 0.20) {
 		// Heavy greylisting or bounce pressure: 50% backoff
 		throttledRate := int(float64(currentRate) * throttleFactor)
-		if throttledRate < 30 {
-			throttledRate = 30
+		if throttledRate < 10 {
+			throttledRate = 10
 		}
 
 		g.Log().Warningf(ctx, "Campaign %d heavy soft deferrals (%.2f%%) or hard bounces (%.2f%%). Dynamic throttling rate to %d/min (was %d/min).",
 			taskId, softDeferRate*100, hardBounceRate*100, throttledRate, currentRate)
 		e.rateController.SetMaxPerMinute(throttledRate)
 
-		if isAuto && e.pool != nil && e.pool.Cap() > 8 {
+		if isAuto && e.pool != nil && e.pool.Cap() > 4 {
 			newCap := e.pool.Cap() / 2
-			if newCap < 8 {
-				newCap = 8
+			if newCap < 4 {
+				newCap = 4
 			}
 			e.pool.Tune(newCap)
 			g.Log().Warningf(ctx, "Campaign %d: Tuned worker pool down to %d threads during pushback.", taskId, newCap)
@@ -1960,48 +1983,54 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 	} else if stats.SoftDefers >= 5 && softDeferRate >= 0.10 {
 		// Mild greylisting: 25% backoff
 		throttledRate := int(float64(currentRate) * 0.75)
-		if throttledRate < 45 {
-			throttledRate = 45
+		if throttledRate < 15 {
+			throttledRate = 15
 		}
 
 		g.Log().Warningf(ctx, "Campaign %d mild greylisting (%.2f%% defers). Backing off rate to %d/min (was %d/min).",
 			taskId, softDeferRate*100, throttledRate, currentRate)
 		e.rateController.SetMaxPerMinute(throttledRate)
 
-		if isAuto && e.pool != nil && e.pool.Cap() > 12 {
-			e.pool.Tune(12)
+		if isAuto && e.pool != nil && e.pool.Cap() > 6 {
+			e.pool.Tune(6)
 		}
 	} else if hardBounceRate < 0.02 && softDeferRate < 0.05 {
-		// Pristine Deliverability: Scale UP!
+		// Pristine Deliverability: Smooth Scaling (20-40 emails/min ceiling)
 		if isAuto {
-			acceleratedRate := int(float64(currentRate) * 1.25)
-			if acceleratedRate < 120 {
-				acceleratedRate = 120
+			acceleratedRate := int(float64(currentRate) * 1.15)
+			if acceleratedRate < 20 {
+				acceleratedRate = 20
 			}
-			if acceleratedRate > 350 {
-				acceleratedRate = 350
+			if acceleratedRate > 40 {
+				acceleratedRate = 40
 			}
 
 			if acceleratedRate != currentRate {
-				g.Log().Infof(ctx, "Campaign %d pristine deliverability (hard: %.2f%%, soft: %.2f%%). Dynamic auto-accelerating rate to %d/min (was %d/min).",
+				g.Log().Infof(ctx, "Campaign %d pristine deliverability (hard: %.2f%%, soft: %.2f%%). Smooth pacing adjusted to %d/min (was %d/min).",
 					taskId, hardBounceRate*100, softDeferRate*100, acceleratedRate, currentRate)
 				e.rateController.SetMaxPerMinute(acceleratedRate)
 			}
 
-			if e.pool != nil && e.pool.Cap() < 32 {
-				newCap := e.pool.Cap() + 4
-				if newCap > 32 {
-					newCap = 32
+			if e.pool != nil && e.pool.Cap() < 12 {
+				newCap := e.pool.Cap() + 2
+				if newCap > 12 {
+					newCap = 12
 				}
 				e.pool.Tune(newCap)
-				g.Log().Infof(ctx, "Campaign %d: Dynamic auto-scaling worker pool up to %d threads.", taskId, newCap)
+				g.Log().Infof(ctx, "Campaign %d: Worker pool tuned to %d threads.", taskId, newCap)
 			}
 		}
 	} else {
-		// Stable / Balanced: Ensure rate is at least healthy baseline
-		baseline := 120
+		// Stable / Balanced: Ensure rate is at safe baseline
+		baseline := 20
+		if task != nil && task.RecipientCount > 20000 {
+			baseline = 30
+		}
 		if task != nil && task.Threads > 0 {
-			baseline = task.Threads * 12
+			baseline = task.Threads * 8
+			if baseline > 50 {
+				baseline = 50
+			}
 		}
 		if currentRate < baseline {
 			g.Log().Infof(ctx, "Campaign %d deliverability healthy (hard: %.2f%%, soft: %.2f%%). Restoring rate towards baseline %d/min.",
@@ -2045,44 +2074,238 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 	}
 }
 
+// getOutboundIPForDomain queries the active outbound IP for a given domain from bm_multi_ip_domain.
+// Strictly checks active = 1 so quarantined domains return empty.
+func getOutboundIPForDomain(ctx context.Context, domain string) string {
+	if domain == "" {
+		return ""
+	}
+	val, err := g.DB().Model("bm_multi_ip_domain").
+		Ctx(ctx).
+		Where("domain = ? AND active = 1", strings.ToLower(domain)).
+		Value("outbound_ip")
+	if err == nil && !val.IsEmpty() {
+		return val.String()
+	}
+	return ""
+}
+
+// getSafeDailyLimitForIP determines the safe daily campaign volume cap for a given IP.
+// Follows progressive warmup ramp: Days 1-3: 30, Days 4-7: 50, Days 8-14: 75, Days 15-21: 100, Days 22+: 120.
+// Allows manual override via Redis key "ip:safe_limit:<ip>" or env "DAILY_SEND_LIMIT_PER_IP".
+func getSafeDailyLimitForIP(ctx context.Context, ip string) int {
+	if ip == "" {
+		return 30
+	}
+
+	// 1. Manual override via Redis DB 1
+	if val, err := g.Redis().Get(ctx, "ip:safe_limit:"+ip); err == nil && !val.IsEmpty() {
+		if limit := val.Int(); limit > 0 {
+			return limit
+		}
+	}
+
+	// 2. Global per-IP env override
+	if envLimit := public.MustGetDockerEnv("DAILY_SEND_LIMIT_PER_IP", ""); envLimit != "" {
+		if limit, err := strconv.Atoi(envLimit); err == nil && limit > 0 {
+			return limit
+		}
+	}
+
+	// 3. Check cached safe limit in Redis (cached for 1 hour)
+	cacheKey := "ip:safe_limit_cached:" + ip
+	if val, err := g.Redis().Get(ctx, cacheKey); err == nil && !val.IsEmpty() {
+		if limit := val.Int(); limit > 0 {
+			return limit
+		}
+	}
+
+	// 4. Calculate safe limit based on campaign sending history
+	activeDaysCount := int64(0)
+	if val, err := g.Redis().SCard(ctx, "ip:campaign_active_days:"+ip); err == nil && val > 0 {
+		activeDaysCount = val
+	}
+
+	// Also check bm_sender_ip_warmup begin_time & score
+	var beginTime int64
+	var score int = 100
+	var record struct {
+		BeginTime int64 `orm:"begin_time"`
+		Score     int   `orm:"score"`
+	}
+	err := g.DB().Model("bm_sender_ip_warmup").
+		Ctx(ctx).
+		Where("sender_ip = ? OR sender_ip LIKE ?", ip, "%\""+ip+"\"%").
+		Fields("begin_time, score").
+		Scan(&record)
+	if err == nil && record.BeginTime > 0 {
+		beginTime = record.BeginTime
+		if record.Score > 0 {
+			score = record.Score
+		}
+	}
+
+	daysSinceStart := activeDaysCount + 1
+	if beginTime > 0 {
+		daysFromDB := (time.Now().Unix()-beginTime)/86400 + 1
+		if daysFromDB > daysSinceStart {
+			daysSinceStart = daysFromDB
+		}
+	}
+
+	var baseCap int
+	switch {
+	case daysSinceStart <= 3:
+		baseCap = 30 // Gentle introductory pacing
+	case daysSinceStart <= 7:
+		baseCap = 50 // Stage 2 ramp
+	case daysSinceStart <= 14:
+		baseCap = 75 // Stage 3 ramp
+	case daysSinceStart <= 21:
+		baseCap = 100 // Stage 4 ramp
+	default:
+		baseCap = 120 // Peak safe capacity for multi-IP outreach
+	}
+
+	// Adjust for reputation score if degraded (score < 70)
+	if score < 70 && score > 0 {
+		baseCap = int(float64(baseCap) * (float64(score) / 100.0))
+		if baseCap < 20 {
+			baseCap = 20
+		}
+	}
+
+	// Cache in Redis for 1 hour
+	_ = g.Redis().SetEX(ctx, cacheKey, strconv.Itoa(baseCap), 3600)
+
+	return baseCap
+}
+
+// isIPCoolingDownOrCapped checks if a specific IP is on cooldown or reached its daily campaign limit.
+func isIPCoolingDownOrCapped(ctx context.Context, ip string) bool {
+	if ip == "" {
+		return true
+	}
+	isCooldown, err := g.Redis().Get(ctx, "ip:cooldown:"+ip)
+	if err == nil && !isCooldown.IsEmpty() {
+		return true
+	}
+	today := time.Now().Format("20060102")
+	dailyVal, err := g.Redis().Get(ctx, fmt.Sprintf("ip:campaign_daily:%s:%s", ip, today))
+	if err == nil && !dailyVal.IsEmpty() {
+		if dailyVal.Int() >= getSafeDailyLimitForIP(ctx, ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// recordCampaignSendForIP increments per-IP daily campaign counter and global campaign count.
+func recordCampaignSendForIP(ctx context.Context, senderEmail string) {
+	domain := extractDomain(senderEmail)
+	if domain == "" {
+		return
+	}
+	outboundIP := getOutboundIPForDomain(ctx, domain)
+	if outboundIP == "" {
+		return
+	}
+
+	today := time.Now().Format("20060102")
+	ipKey := fmt.Sprintf("ip:campaign_daily:%s:%s", outboundIP, today)
+	_, _ = g.Redis().Incr(ctx, ipKey)
+	_, _ = g.Redis().Expire(ctx, ipKey, 172800) // 48h TTL
+
+	// Record active sending day
+	_, _ = g.Redis().SAdd(ctx, "ip:campaign_active_days:"+outboundIP, today)
+
+	// Increment global campaign daily count
+	globalKey := fmt.Sprintf("campaign:daily_total:%s", today)
+	_, _ = g.Redis().Incr(ctx, globalKey)
+	_, _ = g.Redis().Expire(ctx, globalKey, 172800)
+}
+
+// filterHealthyMailboxes filters mailboxes to only those on active domains (active = 1),
+// not on IP cooldown, and not having exceeded their safe daily campaign sending limit.
+// NEVER falls back to unfiltered mailboxes.
 func filterHealthyMailboxes(ctx context.Context, mailboxes []MailboxInfo) []MailboxInfo {
-	var healthy []MailboxInfo
-	for _, m := range mailboxes {
-		domain := extractDomain(m.Username)
-		if domain == "" {
-			healthy = append(healthy, m)
+	if len(mailboxes) == 0 {
+		return nil
+	}
+
+	// 1. Bulk query all active domains in one SQL query
+	type domainMapping struct {
+		Domain     string `orm:"domain"`
+		OutboundIP string `orm:"outbound_ip"`
+	}
+	var mappings []domainMapping
+	err := g.DB().Model("bm_multi_ip_domain").
+		Ctx(ctx).
+		Where("active = 1").
+		Fields("domain, outbound_ip").
+		Scan(&mappings)
+	if err != nil || len(mappings) == 0 {
+		g.Log().Warningf(ctx, "filterHealthyMailboxes: failed to fetch active domains: %v", err)
+		return nil
+	}
+
+	domainToIP := make(map[string]string, len(mappings))
+	uniqueIPs := make(map[string]bool)
+	for _, m := range mappings {
+		if m.Domain != "" && m.OutboundIP != "" {
+			domainToIP[strings.ToLower(m.Domain)] = m.OutboundIP
+			uniqueIPs[m.OutboundIP] = true
+		}
+	}
+
+	// 2. Pre-evaluate eligibility for each unique active IP
+	today := time.Now().Format("20060102")
+	eligibleIPs := make(map[string]bool, len(uniqueIPs))
+	for ip := range uniqueIPs {
+		// Check Redis cooldown
+		isCooldown, err := g.Redis().Get(ctx, "ip:cooldown:"+ip)
+		if err == nil && !isCooldown.IsEmpty() {
+			eligibleIPs[ip] = false
 			continue
 		}
-		var outboundIP string
-		val, err := g.DB().Model("bm_multi_ip_domain").
-			Ctx(ctx).
-			Where("domain = ? AND active = 1", domain).
-			Value("outbound_ip")
-		if err == nil && !val.IsEmpty() {
-			outboundIP = val.String()
+
+		// Check daily cap
+		limit := getSafeDailyLimitForIP(ctx, ip)
+		dailyVal, err := g.Redis().Get(ctx, fmt.Sprintf("ip:campaign_daily:%s:%s", ip, today))
+		if err == nil && !dailyVal.IsEmpty() && dailyVal.Int() >= limit {
+			eligibleIPs[ip] = false
+			continue
 		}
-		if outboundIP != "" {
-			isCooldown, err := g.Redis().Get(ctx, "ip:cooldown:"+outboundIP)
-			if err == nil && !isCooldown.IsEmpty() {
-				continue
-			}
+
+		eligibleIPs[ip] = true
+	}
+
+	// 3. Filter mailboxes: only retain mailboxes whose domain is active and IP is eligible
+	var healthy []MailboxInfo
+	for _, m := range mailboxes {
+		domain := strings.ToLower(extractDomain(m.Username))
+		if domain == "" {
+			continue
 		}
-		healthy = append(healthy, m)
+		ip, exists := domainToIP[domain]
+		if !exists || ip == "" {
+			// Domain is inactive or quarantined
+			continue
+		}
+		if eligibleIPs[ip] {
+			healthy = append(healthy, m)
+		}
 	}
-	if len(healthy) == 0 {
-		return mailboxes
-	}
+
 	return healthy
 }
 
 func isGlobalDailyLimitExceeded(ctx context.Context) bool {
-	// If DAILY_SEND_LIMIT is explicitly set to "disable", completely bypass the cap
 	limitEnv := public.MustGetDockerEnv("DAILY_SEND_LIMIT", "")
 	if strings.ToLower(limitEnv) == "disable" {
 		return false
 	}
 
-	// 1. Get all active IPs from the multi-IP table
 	var activeIPs []string
 	err := g.DB().Model("bm_multi_ip_domain").
 		Ctx(ctx).
@@ -2093,63 +2316,26 @@ func isGlobalDailyLimitExceeded(ctx context.Context) bool {
 		return false
 	}
 
-	// 2. Sum the dynamic daily limits for all active IPs
 	totalDynamicLimit := 0
 	for _, ip := range activeIPs {
-		// Use the built-in daily upstairs service to calculate the base limit for the IP's current warmup day
-		baseDaily, _, err := warmup.WarmupDailyUpstairs().GetSendingLimits(ctx, ip)
-		if err != nil {
-			// fallback default limit per IP during warmup if lookup fails
-			totalDynamicLimit += 1000
-			continue
-		}
-		
-		// If baseDaily is 0, it means warmup is fully completed (100% progress).
-		// In this case, we allow a safe post-warmup capacity of 5,000 emails/day for this IP.
-		if baseDaily <= 0 {
-			totalDynamicLimit += 5000
-			continue
-		}
-		
-		// Query the IP's overall reputation score to factor it into the limit
-		var score int
-		val, err := g.DB().Model("bm_sender_ip_warmup").Ctx(ctx).Where("sender_ip", ip).Value("score")
-		if err == nil && !val.IsEmpty() {
-			score = val.Int()
-		} else {
-			score = 100 // fallback
-		}
-		
-		// Adjust the daily limit by the IP's reputation health score
-		factor := float64(score) / 100.0
-		totalDynamicLimit += int(float64(baseDaily) * factor)
+		totalDynamicLimit += getSafeDailyLimitForIP(ctx, ip)
 	}
 
-	// 3. Allow manual override/cap from the env file if specified (e.g. DAILY_SEND_LIMIT=1000)
 	if limitEnv != "" {
 		if limit, err := strconv.Atoi(limitEnv); err == nil && limit > 0 {
 			totalDynamicLimit = limit
 		}
 	}
 
-	// 4. Query total sent emails today across the entire server
-	now := time.Now().UTC()
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Unix()
-
-	var count int
-	err = g.DB().Model("mailstat_send_mails").
-		Ctx(ctx).
-		Where("log_time >= ?", startOfDay).
-		Where("status", "sent").
-		Fields("COUNT(*)").
-		Scan(&count)
-	if err != nil {
-		g.Log().Warningf(ctx, "Failed to get global daily count: %v", err)
-		return false
+	today := time.Now().Format("20060102")
+	val, err := g.Redis().Get(ctx, fmt.Sprintf("campaign:daily_total:%s", today))
+	count := 0
+	if err == nil && !val.IsEmpty() {
+		count = val.Int()
 	}
 
 	if count >= totalDynamicLimit {
-		g.Log().Warningf(ctx, "[LIMIT] Dynamic daily cap reached (%d/%d sent today). Pausing.", count, totalDynamicLimit)
+		g.Log().Warningf(ctx, "[LIMIT] Dynamic daily campaign cap reached (%d/%d sent today across %d IPs).", count, totalDynamicLimit, len(activeIPs))
 		return true
 	}
 	return false
