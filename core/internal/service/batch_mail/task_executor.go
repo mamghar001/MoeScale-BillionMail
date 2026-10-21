@@ -520,20 +520,24 @@ func (e *TaskExecutor) getTaskIdFromContext(ctx context.Context) (int, error) {
 func (e *TaskExecutor) configureRateController(task *entity.EmailTask) {
 	var maxPerMinute int
 	if task.Threads <= 0 {
-		// Smart Auto Mode: Smooth organic pacing spread over business hours
-		// Prevents sudden snowshoe/burst detection by Spamhaus and major ESPs
-		maxPerMinute = 20
-		if task.RecipientCount > 20000 {
-			maxPerMinute = 30
+		// Smart Auto Mode: Smooth organic pacing spread over business hours (~600m)
+		// e.g. 5k recipients -> 25/min; 30k recipients -> 50/min; 80k+ recipients -> 120/min
+		targetPerMin := task.RecipientCount / 600
+		if targetPerMin < 25 {
+			targetPerMin = 25
 		}
+		if targetPerMin > 120 {
+			targetPerMin = 120
+		}
+		maxPerMinute = targetPerMin
 	} else {
 		// Manual threads: baseline proportional to threads
 		maxPerMinute = task.Threads * 8
 		if maxPerMinute < 15 {
 			maxPerMinute = 15
 		}
-		if maxPerMinute > 60 {
-			maxPerMinute = 60
+		if maxPerMinute > 120 {
+			maxPerMinute = 120
 		}
 	}
 
@@ -1995,26 +1999,26 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 			e.pool.Tune(6)
 		}
 	} else if hardBounceRate < 0.02 && softDeferRate < 0.05 {
-		// Pristine Deliverability: Smooth Scaling (20-40 emails/min ceiling)
+		// Pristine Deliverability: Dynamic scaling up based on health
 		if isAuto {
 			acceleratedRate := int(float64(currentRate) * 1.15)
-			if acceleratedRate < 20 {
-				acceleratedRate = 20
+			if acceleratedRate < 25 {
+				acceleratedRate = 25
 			}
-			if acceleratedRate > 40 {
-				acceleratedRate = 40
+			if acceleratedRate > 350 {
+				acceleratedRate = 350
 			}
 
 			if acceleratedRate != currentRate {
-				g.Log().Infof(ctx, "Campaign %d pristine deliverability (hard: %.2f%%, soft: %.2f%%). Smooth pacing adjusted to %d/min (was %d/min).",
+				g.Log().Infof(ctx, "Campaign %d pristine deliverability (hard: %.2f%%, soft: %.2f%%). Dynamic rate adjusted to %d/min (was %d/min).",
 					taskId, hardBounceRate*100, softDeferRate*100, acceleratedRate, currentRate)
 				e.rateController.SetMaxPerMinute(acceleratedRate)
 			}
 
-			if e.pool != nil && e.pool.Cap() < 12 {
+			if e.pool != nil && e.pool.Cap() < 24 {
 				newCap := e.pool.Cap() + 2
-				if newCap > 12 {
-					newCap = 12
+				if newCap > 24 {
+					newCap = 24
 				}
 				e.pool.Tune(newCap)
 				g.Log().Infof(ctx, "Campaign %d: Worker pool tuned to %d threads.", taskId, newCap)
@@ -2022,14 +2026,14 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 		}
 	} else {
 		// Stable / Balanced: Ensure rate is at safe baseline
-		baseline := 20
+		baseline := 25
 		if task != nil && task.RecipientCount > 20000 {
-			baseline = 30
+			baseline = 50
 		}
 		if task != nil && task.Threads > 0 {
 			baseline = task.Threads * 8
-			if baseline > 50 {
-				baseline = 50
+			if baseline > 100 {
+				baseline = 100
 			}
 		}
 		if currentRate < baseline {
@@ -2091,11 +2095,13 @@ func getOutboundIPForDomain(ctx context.Context, domain string) string {
 }
 
 // getSafeDailyLimitForIP determines the safe daily campaign volume cap for a given IP.
-// Follows progressive warmup ramp: Days 1-3: 30, Days 4-7: 50, Days 8-14: 75, Days 15-21: 100, Days 22+: 120.
+// Starts at 50/day and gradually increases (+30% daily) based on actual emails sent
+// and low bounce rates, up to a maximum cap of 4,000 emails/day per IP.
+// If an IP experiences elevated bounces (> 5%), its cap automatically reduces by 30%.
 // Allows manual override via Redis key "ip:safe_limit:<ip>" or env "DAILY_SEND_LIMIT_PER_IP".
 func getSafeDailyLimitForIP(ctx context.Context, ip string) int {
 	if ip == "" {
-		return 30
+		return 50
 	}
 
 	// 1. Manual override via Redis DB 1
@@ -2105,80 +2111,81 @@ func getSafeDailyLimitForIP(ctx context.Context, ip string) int {
 		}
 	}
 
-	// 2. Global per-IP env override
+	// 2. Max ceiling (default 4000 as requested, or custom env override)
+	maxCeiling := 4000
 	if envLimit := public.MustGetDockerEnv("DAILY_SEND_LIMIT_PER_IP", ""); envLimit != "" {
+		if strings.ToLower(envLimit) == "disable" {
+			return 999999
+		}
 		if limit, err := strconv.Atoi(envLimit); err == nil && limit > 0 {
-			return limit
+			maxCeiling = limit
 		}
 	}
 
-	// 3. Check cached safe limit in Redis (cached for 1 hour)
-	cacheKey := "ip:safe_limit_cached:" + ip
-	if val, err := g.Redis().Get(ctx, cacheKey); err == nil && !val.IsEmpty() {
-		if limit := val.Int(); limit > 0 {
-			return limit
+	today := time.Now().Format("20060102")
+	dynamicKey := "ip:dynamic_limit:" + ip
+	limitVal, err := g.Redis().Get(ctx, dynamicKey)
+	currentLimit := 50 // Safe baseline
+	if err == nil && !limitVal.IsEmpty() {
+		if l := limitVal.Int(); l >= 50 {
+			currentLimit = l
 		}
 	}
 
-	// 4. Calculate safe limit based on campaign sending history
-	activeDaysCount := int64(0)
-	if val, err := g.Redis().SCard(ctx, "ip:campaign_active_days:"+ip); err == nil && val > 0 {
-		activeDaysCount = val
-	}
+	// Check if this IP has already been evaluated for today's volume ramp
+	evalDateKey := "ip:limit_evaluated_date:" + ip
+	lastEvalDate, _ := g.Redis().Get(ctx, evalDateKey)
 
-	// Also check bm_sender_ip_warmup begin_time & score
-	var beginTime int64
-	var score int = 100
-	var record struct {
-		BeginTime int64 `orm:"begin_time"`
-		Score     int   `orm:"score"`
-	}
-	err := g.DB().Model("bm_sender_ip_warmup").
-		Ctx(ctx).
-		Where("sender_ip = ? OR sender_ip LIKE ?", ip, "%\""+ip+"\"%").
-		Fields("begin_time, score").
-		Scan(&record)
-	if err == nil && record.BeginTime > 0 {
-		beginTime = record.BeginTime
-		if record.Score > 0 {
-			score = record.Score
+	if lastEvalDate.String() != today {
+		yesterday := time.Now().AddDate(0, 0, -1).Format("20060102")
+		yesterdaySentVal, _ := g.Redis().Get(ctx, fmt.Sprintf("ip:campaign_daily:%s:%s", ip, yesterday))
+		yesterdaySent := yesterdaySentVal.Int()
+
+		// Query 24h bounce rate for this specific IP from DB
+		var stat struct {
+			Total   int `orm:"total"`
+			Bounced int `orm:"bounced"`
 		}
-	}
+		_ = g.DB().Model("mailstat_send_mails sm").
+			Ctx(ctx).
+			InnerJoin("mailstat_senders sn", "sm.postfix_message_id = sn.postfix_message_id").
+			InnerJoin("bm_multi_ip_domain d", "substring(sn.sender from '@(.*)$') = d.domain").
+			Where("d.outbound_ip = ?", ip).
+			Where("sm.log_time >= ?", time.Now().Unix()-86400).
+			Fields("COUNT(*) as total, SUM(CASE WHEN sm.status = 'bounced' OR sm.dsn LIKE '5.%' THEN 1 ELSE 0 END) as bounced").
+			Scan(&stat)
 
-	daysSinceStart := activeDaysCount + 1
-	if beginTime > 0 {
-		daysFromDB := (time.Now().Unix()-beginTime)/86400 + 1
-		if daysFromDB > daysSinceStart {
-			daysSinceStart = daysFromDB
+		bounceRate := 0.0
+		if stat.Total >= 15 {
+			bounceRate = float64(stat.Bounced) / float64(stat.Total)
 		}
-	}
 
-	var baseCap int
-	switch {
-	case daysSinceStart <= 3:
-		baseCap = 30 // Gentle introductory pacing
-	case daysSinceStart <= 7:
-		baseCap = 50 // Stage 2 ramp
-	case daysSinceStart <= 14:
-		baseCap = 75 // Stage 3 ramp
-	case daysSinceStart <= 21:
-		baseCap = 100 // Stage 4 ramp
-	default:
-		baseCap = 120 // Peak safe capacity for multi-IP outreach
-	}
-
-	// Adjust for reputation score if degraded (score < 70)
-	if score < 70 && score > 0 {
-		baseCap = int(float64(baseCap) * (float64(score) / 100.0))
-		if baseCap < 20 {
-			baseCap = 20
+		if bounceRate >= 0.05 {
+			// Elevated bounces on this IP: throttle back by 30%
+			currentLimit = int(float64(currentLimit) * 0.70)
+			if currentLimit < 50 {
+				currentLimit = 50
+			}
+			g.Log().Warningf(ctx, "[RAMP] IP %s elevated bounce rate (%.2f%%). Reduced daily limit to %d.", ip, bounceRate*100, currentLimit)
+		} else if yesterdaySent >= int(float64(currentLimit)*0.60) {
+			// IP successfully sent >= 60% of yesterday's quota with low bounces: ramp up smoothly by 30%
+			newLimit := int(float64(currentLimit) * 1.30)
+			if newLimit > maxCeiling {
+				newLimit = maxCeiling
+			}
+			currentLimit = newLimit
+			g.Log().Infof(ctx, "[RAMP] IP %s clean deliverability (sent %d yesterday, bounce: %.2f%%). Scaled up daily limit to %d.", ip, yesterdaySent, bounceRate*100, currentLimit)
 		}
+
+		// Save new limit in Redis and mark evaluated for today
+		_, _ = g.Redis().Set(ctx, dynamicKey, strconv.Itoa(currentLimit))
+		_, _ = g.Redis().Set(ctx, evalDateKey, today)
 	}
 
-	// Cache in Redis for 1 hour
-	_ = g.Redis().SetEX(ctx, cacheKey, strconv.Itoa(baseCap), 3600)
-
-	return baseCap
+	if currentLimit > maxCeiling {
+		currentLimit = maxCeiling
+	}
+	return currentLimit
 }
 
 // isIPCoolingDownOrCapped checks if a specific IP is on cooldown or reached its daily campaign limit.
