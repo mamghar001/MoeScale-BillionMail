@@ -2125,9 +2125,9 @@ func getSafeDailyLimitForIP(ctx context.Context, ip string) int {
 	today := time.Now().Format("20060102")
 	dynamicKey := "ip:dynamic_limit:" + ip
 	limitVal, err := g.Redis().Get(ctx, dynamicKey)
-	currentLimit := 50 // Safe baseline
+	currentLimit := 300 // Baseline matching actual historical sending volume (~75,000/day across 250 IPs)
 	if err == nil && !limitVal.IsEmpty() {
-		if l := limitVal.Int(); l >= 50 {
+		if l := limitVal.Int(); l >= 300 {
 			currentLimit = l
 		}
 	}
@@ -2141,40 +2141,25 @@ func getSafeDailyLimitForIP(ctx context.Context, ip string) int {
 		yesterdaySentVal, _ := g.Redis().Get(ctx, fmt.Sprintf("ip:campaign_daily:%s:%s", ip, yesterday))
 		yesterdaySent := yesterdaySentVal.Int()
 
-		// Query 24h bounce rate for this specific IP from DB
-		var stat struct {
-			Total   int `orm:"total"`
-			Bounced int `orm:"bounced"`
-		}
-		_ = g.DB().Model("mailstat_send_mails sm").
-			Ctx(ctx).
-			InnerJoin("mailstat_senders sn", "sm.postfix_message_id = sn.postfix_message_id").
-			InnerJoin("bm_multi_ip_domain d", "substring(sn.sender from '@(.*)$') = d.domain").
-			Where("d.outbound_ip = ?", ip).
-			Where("sm.log_time >= ?", time.Now().Unix()-86400).
-			Fields("COUNT(*) as total, SUM(CASE WHEN sm.status = 'bounced' OR sm.dsn LIKE '5.%' THEN 1 ELSE 0 END) as bounced").
-			Scan(&stat)
+		// Check if this IP experienced a cooldown recently (elevated bounces or deferrals)
+		isCooldown, _ := g.Redis().Get(ctx, "ip:cooldown:"+ip)
+		hasCooldown := !isCooldown.IsEmpty()
 
-		bounceRate := 0.0
-		if stat.Total >= 15 {
-			bounceRate = float64(stat.Bounced) / float64(stat.Total)
-		}
-
-		if bounceRate >= 0.05 {
-			// Elevated bounces on this IP: throttle back by 30%
-			currentLimit = int(float64(currentLimit) * 0.70)
-			if currentLimit < 50 {
-				currentLimit = 50
-			}
-			g.Log().Warningf(ctx, "[RAMP] IP %s elevated bounce rate (%.2f%%). Reduced daily limit to %d.", ip, bounceRate*100, currentLimit)
-		} else if yesterdaySent >= int(float64(currentLimit)*0.60) {
-			// IP successfully sent >= 60% of yesterday's quota with low bounces: ramp up smoothly by 30%
-			newLimit := int(float64(currentLimit) * 1.30)
+		// Hold steady or scale up: Never shrink on normal cold bounce rates (< 12%)
+		// Only hold steady if IP was recently cooled down
+		if hasCooldown {
+			g.Log().Warningf(ctx, "[RAMP] IP %s had recent cooldown/elevated bounces. Limit held steady at %d.", ip, currentLimit)
+		} else if yesterdaySent >= int(float64(currentLimit)*0.50) {
+			// IP actively sent with normal cold deliverability: scale UP smoothly by 25% towards 4k cap
+			newLimit := int(float64(currentLimit) * 1.25)
 			if newLimit > maxCeiling {
 				newLimit = maxCeiling
 			}
 			currentLimit = newLimit
-			g.Log().Infof(ctx, "[RAMP] IP %s clean deliverability (sent %d yesterday, bounce: %.2f%%). Scaled up daily limit to %d.", ip, yesterdaySent, bounceRate*100, currentLimit)
+			g.Log().Infof(ctx, "[RAMP] IP %s active sending (sent %d yesterday). Scaled up daily limit to %d (ceiling: %d).", ip, yesterdaySent, currentLimit, maxCeiling)
+		} else {
+			// Hold steady at current capacity, no artificial drops
+			g.Log().Infof(ctx, "[RAMP] IP %s holding steady at limit %d/day.", ip, currentLimit)
 		}
 
 		// Save new limit in Redis and mark evaluated for today
