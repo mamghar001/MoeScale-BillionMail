@@ -35,11 +35,11 @@
 </template>
 
 <script lang="tsx" setup>
-import { DataTableColumns, NFlex, NButton, NTag } from 'naive-ui'
+import { DataTableColumns, NFlex, NButton, NTag, NSwitch } from 'naive-ui'
 import { confirm, getByteUnit } from '@/utils'
 import { useModal } from '@/hooks/modal/useModal'
 import { useTableData } from '@/hooks/useTableData'
-import { deleteDomain, getDomainList, setDefaultDomain } from '@/api/modules/domain'
+import { deleteDomain, getDomainList, setDefaultDomain, updateDomain } from '@/api/modules/domain'
 import type { MailDomain, MailDomainParams } from './interface'
 
 import DomainForm from './components/DomainForm.vue'
@@ -68,6 +68,45 @@ const { tableParams, tableList, loading, tableTotal, getTableData } = useTableDa
 
 const route = useRoute()
 const router = useRouter()
+
+const getDnsSummary = (row: MailDomain) => {
+	const dns = row.dns_records
+	if (!dns) return { valid: false, count: 0, invalidNames: 'All' }
+	const items = [
+		{ name: 'A', valid: Boolean(dns.a?.valid) },
+		{ name: 'MX', valid: Boolean(dns.mx?.valid) },
+		{ name: 'SPF', valid: Boolean(dns.spf?.valid) },
+		{ name: 'DKIM', valid: Boolean(dns.dkim?.valid || dns.dkim_short?.valid) },
+		{ name: 'DMARC', valid: Boolean(dns.dmarc?.valid) },
+	]
+	const validCount = items.filter(i => i.valid).length
+	const allValid = validCount === items.length
+	const invalidNames = items.filter(i => !i.valid).map(i => i.name).join(', ')
+	return {
+		valid: allValid,
+		count: validCount,
+		invalidNames,
+	}
+}
+
+const handleToggleActive = async (row: MailDomain, active: boolean) => {
+	try {
+		await updateDomain({
+			domain: row.domain,
+			quota: row.quota,
+			mailboxes: row.mailboxes,
+			email: row.email,
+			urls: row.urls || [],
+			hostname: row.a_record,
+			outbound_ip: row.multi_ip_domains?.outbound_ip || '',
+			active: active ? 1 : 0,
+		} as any)
+		row.active = active ? 1 : 0
+		getTableData()
+	} catch (e) {
+		console.error(e)
+	}
+}
 
 // Table columns
 const columns = ref<DataTableColumns<MailDomain>>([
@@ -111,6 +150,33 @@ const columns = ref<DataTableColumns<MailDomain>>([
 				}}
 			/>
 		),
+	},
+	{
+		key: 'dns_status',
+		title: 'DNS Status',
+		minWidth: 120,
+		render: row => {
+			const summary = getDnsSummary(row)
+			return (
+				<div
+					class="inline-flex items-center gap-6px cursor-pointer"
+					onClick={() => handleDNSRecord(row)}
+					title={
+						summary.valid
+							? 'All DNS records (A, MX, SPF, DKIM, DMARC) are valid. Click to view.'
+							: `Missing/Invalid: ${summary.invalidNames}. Click to view details.`
+					}>
+					<i
+						class={[
+							'text-16px',
+							summary.valid ? 'i-ooui:success text-primary' : 'i-ooui:clear text-error',
+						]}></i>
+					<span class={summary.valid ? 'text-primary font-medium' : 'text-error font-medium'}>
+						{summary.valid ? 'DNS OK' : `${summary.count}/5 Valid`}
+					</span>
+				</div>
+			)
+		},
 	},
 	{
 		key: 'quota',
@@ -198,10 +264,30 @@ const columns = ref<DataTableColumns<MailDomain>>([
 		},
 	},
 	{
+		key: 'active',
+		title: 'Status',
+		width: 110,
+		render: row => (
+			<div class="inline-flex items-center gap-6px">
+				<NSwitch
+					value={row.active === 1}
+					size="small"
+					disabled={row.default === 1}
+					onUpdateValue={async (val: boolean) => {
+						await handleToggleActive(row, val)
+					}}
+				/>
+				<span class={row.active === 1 ? 'text-primary text-12px font-medium' : 'text-gray-400 text-12px'}>
+					{row.active === 1 ? 'Active' : 'Inactive'}
+				</span>
+			</div>
+		),
+	},
+	{
 		title: t('domain.columns.actions'),
 		key: 'actions',
 		align: 'right',
-		width: 260,
+		width: 280,
 		render: row => (
 			<NFlex inline={true}>
 				<NButton
@@ -210,7 +296,14 @@ const columns = ref<DataTableColumns<MailDomain>>([
 					onClick={() => {
 						handleDNSRecord(row)
 					}}>
-					{t('domain.actions.dnsRecord')}
+					<span class="inline-flex items-center gap-4px">
+						{t('domain.actions.dnsRecord')}
+						<i
+							class={[
+								'text-14px',
+								getDnsSummary(row).valid ? 'i-ooui:success text-primary' : 'i-ooui:clear text-error',
+							]}></i>
+					</span>
 				</NButton>
 				<NButton
 					type="primary"

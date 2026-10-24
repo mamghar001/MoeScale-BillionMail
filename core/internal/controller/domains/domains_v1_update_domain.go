@@ -6,6 +6,7 @@ import (
 	"billionmail-core/internal/service/public"
 	"context"
 	"database/sql"
+	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/frame/g"
 
 	"github.com/gogf/gf/v2/errors/gerror"
@@ -61,6 +62,19 @@ func (c *ControllerV1) UpdateDomain(ctx context.Context, req *v1.UpdateDomainReq
 	if err = domains.Update(ctx, updateData); err != nil {
 		return nil, err
 	}
+
+	// Sync active status to bm_multi_ip_domain and Postfix transport map
+	_, _ = g.DB().Model("bm_multi_ip_domain").Ctx(ctx).Where("domain", domainName).Data(g.Map{"active": req.Active}).Update()
+	if req.Active == 0 {
+		_, _ = g.DB().Model("bm_domain_smtp_transport").Ctx(ctx).
+			Where("domain = ? AND smtp_name NOT LIKE '%_DISABLED_%'", "@"+domainName).
+			Data(g.Map{"smtp_name": gdb.Raw("CONCAT(smtp_name, '_DISABLED_spamhaus')")}).Update()
+	} else {
+		_, _ = g.DB().Model("bm_domain_smtp_transport").Ctx(ctx).
+			Where("domain = ?", "@"+domainName).
+			Data(g.Map{"smtp_name": gdb.Raw("REPLACE(smtp_name, '_DISABLED_spamhaus', '')")}).Update()
+	}
+
 	_ = public.WriteLog(ctx, public.LogParams{
 		Type: consts.LOGTYPE.Domain,
 		Log:  "Update domain :" + req.Domain + " successfully",
