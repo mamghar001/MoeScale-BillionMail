@@ -455,9 +455,9 @@ func (o *Overview) fillChartDataDaily(data []map[string]interface{}, fillItem ma
 
 	lst := make([]map[string]interface{}, 0, (endTime-startTime)/86400+1)
 	for i := startTime; i <= endTime; i += 86400 {
-		dayDateObj := time.Unix(i, 0)
+		dayDateObj := time.Unix(i, 0).UTC()
 		dayDate := dayDateObj.Format("2006-01-02")
-		dayTime := time.Date(dayDateObj.Year(), dayDateObj.Month(), dayDateObj.Day(), 0, 0, 0, 0, time.Local).Unix()
+		dayTime := time.Date(dayDateObj.Year(), dayDateObj.Month(), dayDateObj.Day(), 12, 0, 0, 0, time.UTC).Unix()
 
 		if item, ok := m[dayDate]; ok {
 			item[fillKey] = dayTime
@@ -492,9 +492,9 @@ func (o *Overview) fillChartDataMonthly(data []map[string]interface{}, fillItem 
 
 	lst := make([]map[string]interface{}, 0, (endTime-startTime)/2592000+1)
 	for i := startTime; i <= endTime; i += 2592000 {
-		monthDateObj := time.Unix(i, 0)
+		monthDateObj := time.Unix(i, 0).UTC()
 		monthDate := monthDateObj.Format("2006-01")
-		monthTime := time.Date(monthDateObj.Year(), monthDateObj.Month(), 1, 0, 0, 0, 0, time.Local).Unix()
+		monthTime := time.Date(monthDateObj.Year(), monthDateObj.Month(), 15, 12, 0, 0, 0, time.UTC).Unix()
 
 		if item, ok := m[monthDate]; ok {
 			item[fillKey] = monthTime
@@ -555,7 +555,7 @@ func (o *Overview) prepareChartData(startTime, endTime int64) (string, string) {
 	secs := endTime - startTime
 	xAxisField := "TO_CHAR(TO_TIMESTAMP(sm.log_time_millis / 1000), 'YYYY-MM-DD') as x"
 
-	if secs < 86400 {
+	if secs <= 100000 {
 		columnType = "hourly"
 		xAxisField = "TO_CHAR(TO_TIMESTAMP(sm.log_time_millis / 1000), 'HH24')::integer as x"
 	}

@@ -6,9 +6,9 @@
 
 		<div class="date-filters">
 			<n-radio-group v-model:value="activeFilter" @update:value="setFilter">
-				<n-radio-button value="today">{{ $t('common.time.today') }}</n-radio-button>
-				<n-radio-button value="yesterday">{{ $t('common.time.yesterday') }}</n-radio-button>
-				<n-radio-button value="last7days">{{ $t('common.time.last7days') }}</n-radio-button>
+				<n-radio-button value="today" @click="setFilter('today')">{{ $t('common.time.today') }}</n-radio-button>
+				<n-radio-button value="yesterday" @click="setFilter('yesterday')">{{ $t('common.time.yesterday') }}</n-radio-button>
+				<n-radio-button value="last7days" @click="setFilter('last7days')">{{ $t('common.time.last7days') }}</n-radio-button>
 			</n-radio-group>
 			<div class="w-240px">
 				<n-date-picker
@@ -40,11 +40,12 @@ const activeFilter = ref('today')
 
 const dateDisabled = (ts: number) => {
 	const today = new Date()
-	const before = addDays(today, -30)
+	const before = addDays(today, -365)
 	return startOfDay(before).getTime() > ts || endOfDay(today).getTime() < ts
 }
 
 const setFilter = (filter: string) => {
+	activeFilter.value = filter
 	switch (filter) {
 		case 'today':
 			dateRange.value = getDayTimeRange()
