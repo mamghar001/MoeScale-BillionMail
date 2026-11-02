@@ -32,6 +32,19 @@ var (
 	taskExecutors      = make(map[int]*TaskExecutor)
 	taskExecutorsMutex sync.RWMutex
 
+	// In-memory cache for mailboxes and active domain routes to prevent hammering Postgres/Redis on every send
+	cachedAllMailboxes         []MailboxInfo
+	cachedAllMailboxesTime     time.Time
+	allMailboxesMu             sync.RWMutex
+
+	cachedHealthyMailboxes     []MailboxInfo
+	cachedHealthyMailboxesTime time.Time
+	healthyMailboxesMu         sync.RWMutex
+
+	cachedDomainToIP           = make(map[string]string)
+	cachedDomainToIPTime       time.Time
+	domainToIPMu               sync.RWMutex
+
 	// global rate limiter
 	//globalLimiter = rate.NewLimiter(rate.Limit(5000), 100)
 )
@@ -309,7 +322,7 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 	// create worker pool
 	poolSize := task.Threads
 	if poolSize <= 0 {
-		poolSize = 8 // Auto starts with a smooth 8 concurrent workers (tuned up to 16)
+		poolSize = 16 // Auto uses 16 concurrent workers (smooth multi-IP dispatch)
 	}
 
 	// detailed record thread parameters
@@ -549,24 +562,25 @@ func (e *TaskExecutor) getTaskIdFromContext(ctx context.Context) (int, error) {
 func (e *TaskExecutor) configureRateController(task *entity.EmailTask) {
 	var maxPerMinute int
 	if task.Threads <= 0 {
-		// Smart Auto Mode: Smooth organic pacing spread over business hours (~600m)
-		// e.g. 5k recipients -> 25/min; 30k recipients -> 50/min; 80k+ recipients -> 120/min
-		targetPerMin := task.RecipientCount / 600
-		if targetPerMin < 25 {
-			targetPerMin = 25
+		// Smart Auto Mode: Smooth organic pacing across ~300m (5 hours)
+		// Bounded by safe floor (30/min) and safe ceiling (250/min).
+		// Across 253 IPs, 250/min is less than 1 email per IP per minute!
+		targetPerMin := task.RecipientCount / 300
+		if targetPerMin < 30 {
+			targetPerMin = 30
 		}
-		if targetPerMin > 120 {
-			targetPerMin = 120
+		if targetPerMin > 250 {
+			targetPerMin = 250
 		}
 		maxPerMinute = targetPerMin
 	} else {
-		// Manual threads: baseline proportional to threads
-		maxPerMinute = task.Threads * 8
-		if maxPerMinute < 15 {
-			maxPerMinute = 15
+		// Manual threads: baseline proportional to threads (up to 300/min)
+		maxPerMinute = task.Threads * 15
+		if maxPerMinute < 20 {
+			maxPerMinute = 20
 		}
-		if maxPerMinute > 120 {
-			maxPerMinute = 120
+		if maxPerMinute > 300 {
+			maxPerMinute = 300
 		}
 	}
 
@@ -1826,7 +1840,26 @@ func getMailboxesByDomain(ctx context.Context, domain string) ([]MailboxInfo, er
 }
 
 // getAllMailboxes returns all active mailboxes across all domains (excluding admin domain)
+// Uses an in-memory cache with 60s TTL to prevent querying Postgres on every single email send.
 func getAllMailboxes(ctx context.Context) ([]MailboxInfo, error) {
+	allMailboxesMu.RLock()
+	if len(cachedAllMailboxes) > 0 && time.Since(cachedAllMailboxesTime) < 60*time.Second {
+		result := make([]MailboxInfo, len(cachedAllMailboxes))
+		copy(result, cachedAllMailboxes)
+		allMailboxesMu.RUnlock()
+		return result, nil
+	}
+	allMailboxesMu.RUnlock()
+
+	allMailboxesMu.Lock()
+	defer allMailboxesMu.Unlock()
+
+	if len(cachedAllMailboxes) > 0 && time.Since(cachedAllMailboxesTime) < 60*time.Second {
+		result := make([]MailboxInfo, len(cachedAllMailboxes))
+		copy(result, cachedAllMailboxes)
+		return result, nil
+	}
+
 	var mailboxes []MailboxInfo
 	err := g.DB().Model("mailbox").
 		Where("active", 1).
@@ -1836,7 +1869,12 @@ func getAllMailboxes(ctx context.Context) ([]MailboxInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mailboxes, nil
+	cachedAllMailboxes = mailboxes
+	cachedAllMailboxesTime = time.Now()
+
+	result := make([]MailboxInfo, len(mailboxes))
+	copy(result, mailboxes)
+	return result, nil
 }
 
 // extractDomain extracts the domain from an email address
@@ -2126,17 +2164,30 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 }
 
 // getOutboundIPForDomain queries the active outbound IP for a given domain from bm_multi_ip_domain.
-// Strictly checks active = 1 so quarantined domains return empty.
+// Strictly checks active = 1 so quarantined domains return empty. Uses in-memory cache to eliminate DB queries per send.
 func getOutboundIPForDomain(ctx context.Context, domain string) string {
 	if domain == "" {
 		return ""
 	}
+	d := strings.ToLower(domain)
+
+	domainToIPMu.RLock()
+	if ip, ok := cachedDomainToIP[d]; ok && time.Since(cachedDomainToIPTime) < 60*time.Second {
+		domainToIPMu.RUnlock()
+		return ip
+	}
+	domainToIPMu.RUnlock()
+
 	val, err := g.DB().Model("bm_multi_ip_domain").
 		Ctx(ctx).
-		Where("domain = ? AND active = 1", strings.ToLower(domain)).
+		Where("domain = ? AND active = 1", d).
 		Value("outbound_ip")
 	if err == nil && !val.IsEmpty() {
-		return val.String()
+		ip := val.String()
+		domainToIPMu.Lock()
+		cachedDomainToIP[d] = ip
+		domainToIPMu.Unlock()
+		return ip
 	}
 	return ""
 }
@@ -2266,10 +2317,30 @@ func recordCampaignSendForIP(ctx context.Context, senderEmail string) {
 
 // filterHealthyMailboxes filters mailboxes to only those on active domains (active = 1),
 // not on IP cooldown, and not having exceeded their safe daily campaign sending limit.
+// Uses an in-memory cache with 20s TTL to eliminate thousands of Redis/DB roundtrips per send.
 // NEVER falls back to unfiltered mailboxes.
 func filterHealthyMailboxes(ctx context.Context, mailboxes []MailboxInfo) []MailboxInfo {
 	if len(mailboxes) == 0 {
 		return nil
+	}
+
+	healthyMailboxesMu.RLock()
+	if len(cachedHealthyMailboxes) > 0 && time.Since(cachedHealthyMailboxesTime) < 20*time.Second {
+		result := make([]MailboxInfo, len(cachedHealthyMailboxes))
+		copy(result, cachedHealthyMailboxes)
+		healthyMailboxesMu.RUnlock()
+		return result
+	}
+	healthyMailboxesMu.RUnlock()
+
+	healthyMailboxesMu.Lock()
+	defer healthyMailboxesMu.Unlock()
+
+	// Double check under write lock
+	if len(cachedHealthyMailboxes) > 0 && time.Since(cachedHealthyMailboxesTime) < 20*time.Second {
+		result := make([]MailboxInfo, len(cachedHealthyMailboxes))
+		copy(result, cachedHealthyMailboxes)
+		return result
 	}
 
 	// 1. Bulk query all active domains in one SQL query
@@ -2292,10 +2363,17 @@ func filterHealthyMailboxes(ctx context.Context, mailboxes []MailboxInfo) []Mail
 	uniqueIPs := make(map[string]bool)
 	for _, m := range mappings {
 		if m.Domain != "" && m.OutboundIP != "" {
-			domainToIP[strings.ToLower(m.Domain)] = m.OutboundIP
+			d := strings.ToLower(m.Domain)
+			domainToIP[d] = m.OutboundIP
 			uniqueIPs[m.OutboundIP] = true
 		}
 	}
+
+	// Update cached domainToIP
+	domainToIPMu.Lock()
+	cachedDomainToIP = domainToIP
+	cachedDomainToIPTime = time.Now()
+	domainToIPMu.Unlock()
 
 	// 2. Pre-evaluate eligibility for each unique active IP
 	today := time.Now().Format("20060102")
@@ -2336,8 +2414,19 @@ func filterHealthyMailboxes(ctx context.Context, mailboxes []MailboxInfo) []Mail
 		}
 	}
 
-	return healthy
+	cachedHealthyMailboxes = healthy
+	cachedHealthyMailboxesTime = time.Now()
+
+	result := make([]MailboxInfo, len(healthy))
+	copy(result, healthy)
+	return result
 }
+
+var (
+	cachedGlobalLimit     int
+	cachedGlobalLimitTime time.Time
+	globalLimitMu         sync.RWMutex
+)
 
 func isGlobalDailyLimitExceeded(ctx context.Context) bool {
 	limitEnv := public.MustGetDockerEnv("DAILY_SEND_LIMIT", "")
@@ -2345,25 +2434,42 @@ func isGlobalDailyLimitExceeded(ctx context.Context) bool {
 		return false
 	}
 
-	var activeIPs []string
-	err := g.DB().Model("bm_multi_ip_domain").
-		Ctx(ctx).
-		Where("active", 1).
-		Fields("DISTINCT outbound_ip").
-		Scan(&activeIPs)
-	if err != nil || len(activeIPs) == 0 {
-		return false
-	}
+	globalLimitMu.RLock()
+	totalDynamicLimit := cachedGlobalLimit
+	isCached := totalDynamicLimit > 0 && time.Since(cachedGlobalLimitTime) < 60*time.Second
+	globalLimitMu.RUnlock()
 
-	totalDynamicLimit := 0
-	for _, ip := range activeIPs {
-		totalDynamicLimit += getSafeDailyLimitForIP(ctx, ip)
-	}
+	if !isCached {
+		globalLimitMu.Lock()
+		if cachedGlobalLimit > 0 && time.Since(cachedGlobalLimitTime) < 60*time.Second {
+			totalDynamicLimit = cachedGlobalLimit
+		} else {
+			var activeIPs []string
+			err := g.DB().Model("bm_multi_ip_domain").
+				Ctx(ctx).
+				Where("active", 1).
+				Fields("DISTINCT outbound_ip").
+				Scan(&activeIPs)
+			if err != nil || len(activeIPs) == 0 {
+				globalLimitMu.Unlock()
+				return false
+			}
 
-	if limitEnv != "" {
-		if limit, err := strconv.Atoi(limitEnv); err == nil && limit > 0 {
-			totalDynamicLimit = limit
+			computed := 0
+			for _, ip := range activeIPs {
+				computed += getSafeDailyLimitForIP(ctx, ip)
+			}
+
+			if limitEnv != "" {
+				if limit, err := strconv.Atoi(limitEnv); err == nil && limit > 0 {
+					computed = limit
+				}
+			}
+			cachedGlobalLimit = computed
+			cachedGlobalLimitTime = time.Now()
+			totalDynamicLimit = computed
 		}
+		globalLimitMu.Unlock()
 	}
 
 	today := time.Now().Format("20060102")
@@ -2374,7 +2480,7 @@ func isGlobalDailyLimitExceeded(ctx context.Context) bool {
 	}
 
 	if count >= totalDynamicLimit {
-		g.Log().Warningf(ctx, "[LIMIT] Dynamic daily campaign cap reached (%d/%d sent today across %d IPs).", count, totalDynamicLimit, len(activeIPs))
+		g.Log().Warningf(ctx, "[LIMIT] Dynamic daily campaign cap reached (%d/%d sent today).", count, totalDynamicLimit)
 		return true
 	}
 	return false
