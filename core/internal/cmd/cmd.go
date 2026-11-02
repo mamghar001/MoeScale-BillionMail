@@ -143,9 +143,13 @@ var (
 				"/api/unsubscribe":               {},
 				"/api/unsubscribe_new":           {},
 				"/api/contact/unsubscribe":       {},
-				"/api/batch_mail/api/send":       {},
-				"/api/batch_mail/api/batch_send": {},
-				"/api/subscribe/confirm":         {},
+				"/api/batch_mail/api/send":                 {},
+				"/api/batch_mail/api/batch_send":           {},
+				"/api/batch_mail/api/campaign/stats":       {},
+				"/api/batch_mail/api/campaign_stats":       {},
+				"/api/batch_mail/api/campaigns":            {},
+				"/api/batch_mail/api/campaign/failed_list": {},
+				"/api/subscribe/confirm":                   {},
 				"/api/subscribe/submit":          {},
 				"/api/languages/get":             {},
 				"/already_subscribed.html":       {},
@@ -185,9 +189,22 @@ var (
 
 						if !r.Session.MustGet("safe_path_pass", false).Bool() {
 							if strings.HasPrefix(r.URL.Path, "/api/") {
-								// Check if the request is an API token request
+								// Check if the request is an API token request or valid active API key
 								if claims, err := rbac2.JWT().ParseTokenByRequest(r); err == nil && claims != nil && claims.ApiToken {
 									return
+								}
+								rawKey := strings.TrimSpace(r.Header.Get("x-api-key"))
+								if rawKey == "" {
+									rawKey = strings.TrimSpace(r.Header.Get("ApiKey"))
+								}
+								if rawKey == "" && strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+									rawKey = strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+								}
+								if rawKey != "" {
+									var count int
+									if err := g.DB().Model("api_templates").Where("api_key", rawKey).Where("active", 1).Fields("count(*)").Scan(&count); err == nil && count > 0 {
+										return
+									}
 								}
 								resp := public.CodeMap[404]
 								resp.Msg = "access denied"

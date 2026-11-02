@@ -28,6 +28,9 @@ export const useTableData = <T, K extends TableParams>(options: UseTableDataOpti
 	const getTableData = async (resetPage = false) => {
 		if (resetPage) {
 			params.page = 1
+			if (tableParams.value) {
+				tableParams.value.page = 1
+			}
 		}
 
 		if (fetchFn) {

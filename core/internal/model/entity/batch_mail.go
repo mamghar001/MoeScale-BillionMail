@@ -96,6 +96,17 @@ type EmailTask struct {
 	SendingWindowStart   string `json:"sending_window_start"   dc:"Sending Window Start (HH:mm)" orm:"sending_window_start"`
 	SendingWindowEnd     string `json:"sending_window_end"     dc:"Sending Window End (HH:mm)" orm:"sending_window_end"`
 	SendingWindowTz      string `json:"sending_window_tz"      dc:"Sending Window Timezone" orm:"sending_window_tz"`
+	WorkspaceId          int    `json:"workspace_id"           dc:"Workspace ID" orm:"workspace_id"`
+}
+
+// EmailWorkspace Entity
+type EmailWorkspace struct {
+	Id         int    `json:"id"          orm:"id" dc:"Workspace ID"`
+	Name       string `json:"name"        orm:"name" dc:"Workspace Name"`
+	Color      string `json:"color"       orm:"color" dc:"Workspace Color Tag"`
+	TaskCount  int    `json:"task_count"  dc:"Associated Task Count"`
+	CreateTime int    `json:"create_time" orm:"create_time" dc:"Create Time"`
+	UpdateTime int    `json:"update_time" orm:"update_time" dc:"Update Time"`
 }
 
 // MarshalJSON implements custom JSON marshaling to convert TagIdsRaw to TagIds array

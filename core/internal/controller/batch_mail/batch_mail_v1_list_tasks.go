@@ -7,13 +7,24 @@ import (
 	"context"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/net/ghttp"
 )
 
 func (c *ControllerV1) ListTasks(ctx context.Context, req *v1.ListTasksReq) (res *v1.ListTasksRes, err error) {
 
 	res = &v1.ListTasksRes{}
 
-	total, tasks, err := batch_mail.GetTasksWithPage(ctx, req.Page, req.PageSize, req.Keyword, req.Status)
+	r := ghttp.RequestFromCtx(ctx)
+	status := req.Status
+	if r != nil && r.Get("status") != nil && !r.Get("status").IsEmpty() {
+		status = r.Get("status").Int()
+	}
+	workspaceId := req.WorkspaceId
+	if r != nil && r.Get("workspace_id") != nil && !r.Get("workspace_id").IsEmpty() {
+		workspaceId = r.Get("workspace_id").Int()
+	}
+
+	total, tasks, err := batch_mail.GetTasksWithPage(ctx, req.Page, req.PageSize, req.Keyword, status, workspaceId)
 	if err != nil {
 		res.Code = 500
 		res.SetError(gerror.New(public.LangCtx(ctx, "Failed to get task list {}", err.Error())))
@@ -21,6 +32,14 @@ func (c *ControllerV1) ListTasks(ctx context.Context, req *v1.ListTasksReq) (res
 	}
 
 	task_list := make([]*v1.TaskDetail, len(tasks))
+
+	// Batch load all workspaces for metadata
+	workspaceMap := make(map[int]*v1.WorkspaceInfo)
+	if wsList, errWs := batch_mail.GetWorkspaces(ctx); errWs == nil {
+		for _, ws := range wsList {
+			workspaceMap[ws.Id] = ws
+		}
+	}
 
 	// Collect all tag IDs and group IDs from all tasks for batch loading
 	allTagIds := make(map[int]bool)
@@ -88,6 +107,12 @@ func (c *ControllerV1) ListTasks(ctx context.Context, req *v1.ListTasksReq) (res
 		// Set group name
 		if groupName, exists := groupNameMap[task.GroupId]; exists {
 			detail.GroupName = groupName
+		}
+
+		// Set workspace name and color
+		if ws, exists := workspaceMap[task.WorkspaceId]; exists {
+			detail.WorkspaceName = ws.Name
+			detail.WorkspaceColor = ws.Color
 		}
 
 		// Load and populate tags for this task

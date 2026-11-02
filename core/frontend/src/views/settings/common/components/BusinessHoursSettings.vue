@@ -72,11 +72,12 @@ const timezoneOptions = [
 const fetchConfig = async () => {
 	try {
 		const res: any = await instance.get('/batch_mail/business_hours')
-		if (res && res.data) {
-			form.enabled = res.data.enabled !== undefined ? res.data.enabled : 1
-			form.start = res.data.start || '08:00'
-			form.end = res.data.end || '18:00'
-			form.timezone = res.data.timezone || 'America/New_York'
+		const data = res?.data !== undefined ? res.data : res
+		if (data && typeof data === 'object') {
+			form.enabled = data.enabled !== undefined ? Number(data.enabled) : 1
+			form.start = data.start || '08:00'
+			form.end = data.end || '18:00'
+			form.timezone = data.timezone || 'America/New_York'
 		}
 	} catch (e) {
 		console.error('Failed to load business hours:', e)

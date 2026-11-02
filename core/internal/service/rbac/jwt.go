@@ -199,10 +199,32 @@ func (s *JWTService) JWTAuthMiddleware(r *ghttp.Request) {
 		r.URL.Path == "/api/languages/get" ||
 		r.URL.Path == "/api/batch_mail/api/send" ||
 		r.URL.Path == "/api/batch_mail/api/batch_send" ||
+		r.URL.Path == "/api/batch_mail/api/campaign/stats" ||
+		r.URL.Path == "/api/batch_mail/api/campaign_stats" ||
+		r.URL.Path == "/api/batch_mail/api/campaigns" ||
+		r.URL.Path == "/api/batch_mail/api/campaign/failed_list" ||
 		r.URL.Path == "/api/subscribe/submit" ||
 		r.URL.Path == "/api/subscribe/confirm" {
 		r.Middleware.Next()
 		return
+	}
+
+	// Check if x-api-key, ApiKey header or Bearer key is an active API template key
+	rawApiKey := strings.TrimSpace(r.Header.Get("x-api-key"))
+	if rawApiKey == "" {
+		rawApiKey = strings.TrimSpace(r.Header.Get("ApiKey"))
+	}
+	if rawApiKey == "" && r.Header.Get("Authorization") != "" {
+		rawApiKey = strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	}
+	if rawApiKey != "" {
+		var count int
+		if err := g.DB().Model("api_templates").Where("api_key", rawApiKey).Where("active", 1).Fields("count(*)").Scan(&count); err == nil && count > 0 {
+			r.SetCtxVar("accountId", 1)
+			r.SetCtxVar("username", "admin")
+			r.Middleware.Next()
+			return
+		}
 	}
 
 	resp := public.CodeMap[401]

@@ -218,6 +218,7 @@ services:
         dockerfile: Dockerfile.debian
       image: billionmail/core:rotate
       hostname: core-manage
+      command: ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
       depends_on:
         - pgsql-billionmail
       volumes:

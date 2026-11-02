@@ -110,6 +110,9 @@ func (c *ControllerV1) UpdateTaskInfo(ctx context.Context, req *v1.UpdateTaskInf
 	if req.SendingWindowTz != "" {
 		updateData["sending_window_tz"] = req.SendingWindowTz
 	}
+	if req.WorkspaceId != nil && *req.WorkspaceId >= 0 {
+		updateData["workspace_id"] = *req.WorkspaceId
+	}
 	if len(updateData) == 0 {
 		res.SetError(gerror.New(public.LangCtx(ctx, "No valid update fields")))
 		return
@@ -126,9 +129,13 @@ func (c *ControllerV1) UpdateTaskInfo(ctx context.Context, req *v1.UpdateTaskInf
 		return nil, err
 	}
 
+	subj := ""
+	if s, ok := updateData["subject"].(string); ok {
+		subj = s
+	}
 	_ = public.WriteLog(ctx, public.LogParams{
 		Type: consts.LOGTYPE.Task,
-		Log:  "Update Task Info :" + updateData["subject"].(string) + " successfully",
+		Log:  "Update Task Info :" + subj + " successfully",
 		Data: updateData,
 	})
 

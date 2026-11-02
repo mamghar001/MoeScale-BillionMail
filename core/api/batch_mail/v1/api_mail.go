@@ -177,3 +177,212 @@ type ApiMailBatchSendReq struct {
 type ApiMailBatchSendRes struct {
 	api_v1.StandardRes
 }
+
+type CampaignStatsReq struct {
+	g.Meta        `path:"/batch_mail/api/campaign/stats" method:"get" tags:"ApiMail" summary:"Get comprehensive campaign stats, daily delivery/bounce breakdown, bounce reasons, domain stats, and failed samples" dc:"Detailed campaign stats. Authenticate using x-api-key header or Authorization: Bearer <token>."`
+	Authorization string `p:"header:authorization" json:"authorization" dc:"Master Admin Token ('Bearer <token>') or API key" in:"header"`
+	ApiKey        string `p:"header:x-api-key" json:"x-api-key" dc:"API Key" in:"header"`
+	CampaignId    int64  `p:"campaign_id" json:"campaign_id" dc:"Campaign ID (e.g. 478). Optional - defaults to 0 for all campaigns" in:"query"`
+	SendingDomain string `p:"sending_domain" json:"sending_domain" dc:"Filter by outbound sending domain (e.g. 'b2bbox.shop')" in:"query"`
+	Domain        string `p:"domain" json:"domain" dc:"Alias for sending_domain" in:"query"`
+	StartTime     int64  `p:"start_time" json:"start_time" dc:"Start time (Unix timestamp in seconds)" in:"query"`
+	EndTime       int64  `p:"end_time" json:"end_time" dc:"End time (Unix timestamp in seconds)" in:"query"`
+	StartDate     string `p:"start_date" json:"start_date" dc:"Start date in 'YYYY-MM-DD' format" in:"query"`
+	EndDate       string `p:"end_date" json:"end_date" dc:"End date in 'YYYY-MM-DD' format" in:"query"`
+	FailedLimit   int    `p:"failed_limit" json:"failed_limit" dc:"Number of recent failed emails to include (default: 50, max: 200)" in:"query"`
+}
+
+type CampaignStatsAliasReq struct {
+	g.Meta        `path:"/batch_mail/api/campaign_stats" method:"get" tags:"ApiMail" summary:"Alias for /batch_mail/api/campaign/stats" dc:"Detailed campaign stats."`
+	Authorization string `p:"header:authorization" json:"authorization" dc:"Master Admin Token ('Bearer <token>') or API key" in:"header"`
+	ApiKey        string `p:"header:x-api-key" json:"x-api-key" dc:"API Key" in:"header"`
+	CampaignId    int64  `p:"campaign_id" json:"campaign_id" dc:"Campaign ID (e.g. 478). Optional - defaults to 0 for all campaigns" in:"query"`
+	SendingDomain string `p:"sending_domain" json:"sending_domain" dc:"Filter by outbound sending domain (e.g. 'b2bbox.shop')" in:"query"`
+	Domain        string `p:"domain" json:"domain" dc:"Alias for sending_domain" in:"query"`
+	StartTime     int64  `p:"start_time" json:"start_time" dc:"Start time (Unix timestamp in seconds)" in:"query"`
+	EndTime       int64  `p:"end_time" json:"end_time" dc:"End time (Unix timestamp in seconds)" in:"query"`
+	StartDate     string `p:"start_date" json:"start_date" dc:"Start date in 'YYYY-MM-DD' format" in:"query"`
+	EndDate       string `p:"end_date" json:"end_date" dc:"End date in 'YYYY-MM-DD' format" in:"query"`
+	FailedLimit   int    `p:"failed_limit" json:"failed_limit" dc:"Number of recent failed emails to include (default: 50, max: 200)" in:"query"`
+}
+
+type CampaignDetailItem struct {
+	Id                   int    `json:"id"`
+	TaskName             string `json:"task_name"`
+	Subject              string `json:"subject"`
+	Addresser            string `json:"addresser"`
+	RecipientCount       int    `json:"recipient_count"`
+	SendsCount           int    `json:"sends_count"`
+	DeliveredCount       int    `json:"delivered_count"`
+	BouncedCount         int    `json:"bounced_count"`
+	DeferredCount        int    `json:"deferred_count"`
+	TaskProcess          int    `json:"task_process"`
+	StatusText           string `json:"status_text"`
+	IsPaused             bool   `json:"is_paused"`
+	StartTime            int64  `json:"start_time"`
+	StartTimeFormatted   string `json:"start_time_formatted"`
+	SendingWindowEnabled int    `json:"sending_window_enabled"`
+	SendingWindowStart   string `json:"sending_window_start"`
+	SendingWindowEnd     string `json:"sending_window_end"`
+	SendingWindowTz      string `json:"sending_window_tz"`
+}
+
+type CampaignStatsFilter struct {
+	CampaignId    int64  `json:"campaign_id"`
+	SendingDomain string `json:"sending_domain"`
+	StartTime     int64  `json:"start_time"`
+	EndTime       int64  `json:"end_time"`
+	StartDate     string `json:"start_date"`
+	EndDate       string `json:"end_date"`
+}
+
+type CampaignSummaryMetric struct {
+	TotalRecipients int     `json:"total_recipients"`
+	TotalSent       int     `json:"total_sent"`
+	Delivered       int     `json:"delivered"`
+	Bounced         int     `json:"bounced"`
+	Deferred        int     `json:"deferred"`
+	Opened          int     `json:"opened"`
+	Clicked         int     `json:"clicked"`
+	DeliveryRate    float64 `json:"delivery_rate"`
+	BounceRate      float64 `json:"bounce_rate"`
+	OpenRate        float64 `json:"open_rate"`
+	ClickRate       float64 `json:"click_rate"`
+}
+
+type CampaignDailyMetric struct {
+	Date         string  `json:"date"`
+	Sends        int     `json:"sends"`
+	Delivered    int     `json:"delivered"`
+	Bounced      int     `json:"bounced"`
+	Deferred     int     `json:"deferred"`
+	DeliveryRate float64 `json:"delivery_rate"`
+	BounceRate   float64 `json:"bounce_rate"`
+	Opened       int     `json:"opened"`
+	Clicked      int     `json:"clicked"`
+}
+
+type BounceReasonSummaryItem struct {
+	ReasonCategory string  `json:"reason_category"`
+	Dsn            string  `json:"dsn"`
+	Count          int     `json:"count"`
+	Percentage     float64 `json:"percentage"`
+	SampleError    string  `json:"sample_error"`
+}
+
+type DomainMetricItem struct {
+	Domain       string  `json:"domain"`
+	Sends        int     `json:"sends"`
+	Delivered    int     `json:"delivered"`
+	Bounced      int     `json:"bounced"`
+	DeliveryRate float64 `json:"delivery_rate"`
+	BounceRate   float64 `json:"bounce_rate"`
+}
+
+type ProviderMetricItem struct {
+	MailProvider string  `json:"mail_provider"`
+	Sends        int     `json:"sends"`
+	Delivered    int     `json:"delivered"`
+	Bounced      int     `json:"bounced"`
+	DeliveryRate float64 `json:"delivery_rate"`
+	BounceRate   float64 `json:"bounce_rate"`
+}
+
+type FailedEmailSampleItem struct {
+	Recipient     string `json:"recipient"`
+	Sender        string `json:"sender"`
+	SendingDomain string `json:"sending_domain"`
+	Status        string `json:"status"`
+	Dsn           string `json:"dsn"`
+	Relay         string `json:"relay"`
+	Reason        string `json:"reason"`
+	LogTime       int64  `json:"log_time"`
+	Date          string `json:"date"`
+}
+
+type CampaignStatsData struct {
+	Campaign             *CampaignDetailItem       `json:"campaign,omitempty"`
+	Filter               CampaignStatsFilter       `json:"filter"`
+	Summary              CampaignSummaryMetric     `json:"summary"`
+	DailyStats           []CampaignDailyMetric     `json:"daily_stats"`
+	BounceReasonsSummary []BounceReasonSummaryItem `json:"bounce_reasons_summary"`
+	SendingDomains       []DomainMetricItem        `json:"sending_domains"`
+	MailProviders        []ProviderMetricItem      `json:"mail_providers"`
+	RecentFailedEmails   []FailedEmailSampleItem   `json:"recent_failed_emails"`
+}
+
+type CampaignStatsRes struct {
+	api_v1.StandardRes
+	Data CampaignStatsData `json:"data"`
+}
+
+type CampaignsListReq struct {
+	g.Meta        `path:"/batch_mail/api/campaigns" method:"get" tags:"ApiMail" summary:"List marketing campaigns with delivery and bounce metrics" dc:"List campaigns. Authenticate using x-api-key header or Authorization: Bearer <token>."`
+	Authorization string `p:"header:authorization" json:"authorization" dc:"Master Admin Token or API key" in:"header"`
+	ApiKey        string `p:"header:x-api-key" json:"x-api-key" dc:"API Key" in:"header"`
+	Status        string `p:"status" json:"status" dc:"Filter by status ('all', 'running', 'paused', 'completed', 'draft')" in:"query"`
+	Page          int    `p:"page" json:"page" dc:"Page number (default: 1)" in:"query"`
+	PageSize      int    `p:"page_size" json:"page_size" dc:"Page size (default: 50)" in:"query"`
+}
+
+type CampaignListItem struct {
+	Id                   int     `json:"id"`
+	TaskName             string  `json:"task_name"`
+	Subject              string  `json:"subject"`
+	Addresser            string  `json:"addresser"`
+	RecipientCount       int     `json:"recipient_count"`
+	SendsCount           int     `json:"sends_count"`
+	DeliveredCount       int     `json:"delivered_count"`
+	BouncedCount         int     `json:"bounced_count"`
+	DeferredCount        int     `json:"deferred_count"`
+	DeliveryRate         float64 `json:"delivery_rate"`
+	BounceRate           float64 `json:"bounce_rate"`
+	TaskProcess          int     `json:"task_process"`
+	StatusText           string  `json:"status_text"`
+	IsPaused             bool    `json:"is_paused"`
+	StartTime            int64   `json:"start_time"`
+	StartTimeFormatted   string  `json:"start_time_formatted"`
+	CreateTime           int64   `json:"create_time"`
+	SendingWindowEnabled int     `json:"sending_window_enabled"`
+	SendingWindowStart   string  `json:"sending_window_start"`
+	SendingWindowEnd     string  `json:"sending_window_end"`
+	SendingWindowTz      string  `json:"sending_window_tz"`
+}
+
+type CampaignsListData struct {
+	Total int                `json:"total"`
+	Page  int                `json:"page"`
+	List  []CampaignListItem `json:"list"`
+}
+
+type CampaignsListRes struct {
+	api_v1.StandardRes
+	Data CampaignsListData `json:"data"`
+}
+
+type CampaignFailedListReq struct {
+	g.Meta        `path:"/batch_mail/api/campaign/failed_list" method:"get" tags:"ApiMail" summary:"Get paginated list of failed and bounced emails with exact SMTP reasons" dc:"Query failed emails. Authenticate using x-api-key header or Authorization: Bearer <token>."`
+	Authorization string `p:"header:authorization" json:"authorization" dc:"Master Admin Token or API key" in:"header"`
+	ApiKey        string `p:"header:x-api-key" json:"x-api-key" dc:"API Key" in:"header"`
+	CampaignId    int64  `p:"campaign_id" json:"campaign_id" dc:"Campaign ID" in:"query"`
+	SendingDomain string `p:"sending_domain" json:"sending_domain" dc:"Filter by sending domain" in:"query"`
+	Domain        string `p:"domain" json:"domain" dc:"Alias for sending_domain" in:"query"`
+	Dsn           string `p:"dsn" json:"dsn" dc:"Filter by DSN status (e.g. '5.1.1', '5.7.1')" in:"query"`
+	StartTime     int64  `p:"start_time" json:"start_time" dc:"Start time (Unix timestamp)" in:"query"`
+	EndTime       int64  `p:"end_time" json:"end_time" dc:"End time (Unix timestamp)" in:"query"`
+	StartDate     string `p:"start_date" json:"start_date" dc:"Start date 'YYYY-MM-DD'" in:"query"`
+	EndDate       string `p:"end_date" json:"end_date" dc:"End date 'YYYY-MM-DD'" in:"query"`
+	Page          int    `p:"page" json:"page" dc:"Page number (default: 1)" in:"query"`
+	PageSize      int    `p:"page_size" json:"page_size" dc:"Page size (default: 50)" in:"query"`
+}
+
+type CampaignFailedListData struct {
+	Total int                     `json:"total"`
+	Page  int                     `json:"page"`
+	List  []FailedEmailSampleItem `json:"list"`
+}
+
+type CampaignFailedListRes struct {
+	api_v1.StandardRes
+	Data CampaignFailedListData `json:"data"`
+}

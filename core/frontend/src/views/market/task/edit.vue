@@ -21,6 +21,13 @@
 								<n-input v-model:value="form.full_name" :placeholder="$t('market.task.edit.displayNamePlaceholder')">
 								</n-input>
 							</n-form-item>
+							<n-form-item label="Workspace / Client" path="workspace_id">
+								<n-select
+									v-model:value="form.workspace_id"
+									:options="workspaceOptions"
+									placeholder="Select a workspace or leave unassigned"
+								/>
+							</n-form-item>
 							<n-form-item :label="$t('market.task.edit.subject')" path="subject">
 								<n-input v-model:value="form.subject" :placeholder="$t('market.task.edit.subjectPlaceholder')">
 								</n-input>
@@ -197,8 +204,8 @@ import { useGlobalStore } from '@/store'
 import { useElementBounding } from '@vueuse/core'
 import { confirm, isObject, Message } from '@/utils'
 import { getContactTagCount } from '@/api/modules/contacts/group'
-import { addTask, getTaskDetails, sendTestEmail, updateTask } from '@/api/modules/market/task'
-import { Task } from './interface'
+import { addTask, getTaskDetails, sendTestEmail, updateTask, getWorkspaceList } from '@/api/modules/market/task'
+import { Task, WorkspaceItem } from './interface'
 import { Template } from '../template/interface'
 
 import FromSelect from './components/FromSelect.vue'
@@ -223,6 +230,25 @@ const isEdit = ref(false)
 
 const taskId = ref(0)
 
+// Workspaces
+const workspaceList = ref<WorkspaceItem[]>([])
+const workspaceOptions = computed(() => {
+	const opts = [{ label: '⚪ Default / Unassigned', value: 0 }]
+	for (const ws of workspaceList.value) {
+		opts.push({ label: ws.name, value: ws.id })
+	}
+	return opts
+})
+
+const loadWorkspaces = async () => {
+	try {
+		const res: any = await getWorkspaceList()
+		workspaceList.value = Array.isArray(res) ? res : (res?.data || [])
+	} catch (e) {
+		// Silent
+	}
+}
+
 // 表单数据
 const form = reactive({
 	addresser: null as null | string,
@@ -230,6 +256,7 @@ const form = reactive({
 	subject: '',
 	group_id: null as null | number,
 	template_id: null as null | number,
+	workspace_id: 0,
 	is_record: 1,
 	unsubscribe: 1,
 	warmup: 0,
@@ -439,6 +466,7 @@ const getParams = () => {
 		remark: form.remark,
 		tag_ids: form.tag_ids,
 		tag_logic: form.tag_logic,
+		workspace_id: form.workspace_id || 0,
 	}
 }
 
@@ -470,6 +498,7 @@ function findTemplateId(list: Template[]) {
 }
 
 const initForm = async () => {
+	await loadWorkspaces()
 	const { task_id: id, type } = route.query
 	if (type === 'edit') {
 		taskId.value = Number(id)
@@ -485,6 +514,7 @@ const initForm = async () => {
 		form.addresser = res.addresser
 		form.full_name = res.full_name
 		form.subject = res.subject
+		form.workspace_id = res.workspace_id || 0
 		form.group_id = res.group_id
 		// form.group_id = res.etypes.split(',').map(item => Number(item))
 		form.template_id = res.template_id

@@ -26,7 +26,6 @@
 						<n-select
 							v-model:value="thresholdPercent"
 							:options="thresholdOptions"
-							:disabled="!enabled"
 							class="flex-1"
 							@update:value="handleUpdateThreshold"
 						/>
@@ -60,9 +59,12 @@ const fetchSettings = async () => {
 	try {
 		loading.value = true
 		const res: any = await getCircuitBreaker()
-		if (res && res.data) {
-			enabled.value = res.data.enabled !== false
-			const th = res.data.threshold || 0.15
+		const data = res?.data !== undefined ? res.data : res
+		if (data && typeof data === 'object') {
+			if (data.enabled !== undefined) {
+				enabled.value = data.enabled === true || data.enabled === 1 || data.enabled === 'true'
+			}
+			const th = Number(data.threshold) || 0.15
 			thresholdPercent.value = th > 1 ? Math.round(th) : Math.round(th * 100)
 		}
 	} catch (e) {

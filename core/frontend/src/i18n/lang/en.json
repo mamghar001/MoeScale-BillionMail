@@ -480,7 +480,11 @@
 				"email": "Email",
 				"name": "Group Name",
 				"createdAt": "Created Time",
-				"lastActiveAt": "Last Active Time"
+				"lastActiveAt": "Last Active Time",
+				"contactName": "Name",
+				"company": "Company",
+				"jobTitle": "Title",
+				"attributes": "Attributes"
 			},
 			"status": {
 				"subscribed": "Subscribed",

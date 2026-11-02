@@ -484,7 +484,11 @@
 				"email": "邮箱",
 				"name": "分组名称",
 				"createdAt": "创建时间",
-				"lastActiveAt": "上次活动时间"
+				"lastActiveAt": "上次活动时间",
+				"contactName": "姓名",
+				"company": "公司",
+				"jobTitle": "职位",
+				"attributes": "属性"
 			},
 			"activeSelect": {
 				"options": {

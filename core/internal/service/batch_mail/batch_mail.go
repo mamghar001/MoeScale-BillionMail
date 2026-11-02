@@ -43,12 +43,13 @@ type CreateTaskArgs struct {
 	GroupId   int    `json:"group_id"`   // Groups to unsubscribe from
 	TagIds    []int  `json:"tag_ids"`    // Tag IDs for filtering contacts
 	TagLogic  string `json:"tag_logic"`  // Tag logic (AND/OR)
+	WorkspaceId int  `json:"workspace_id"` // Workspace ID
 }
 
 // ============= task related operations =============
 
 // GetTasksWithPage get task list (pagination)
-func GetTasksWithPage(ctx context.Context, page, pageSize int, keyword string, status int) (total int, list []*v1.EmailTask, err error) {
+func GetTasksWithPage(ctx context.Context, page, pageSize int, keyword string, status int, workspaceId int) (total int, list []*v1.EmailTask, err error) {
 	// default pagination parameters
 	if page <= 0 {
 		page = 1
@@ -65,7 +66,18 @@ func GetTasksWithPage(ctx context.Context, page, pageSize int, keyword string, s
 			WhereOrLike("subject", "%"+keyword+"%")
 	}
 	if status != -1 {
-		model = model.Where("task_process", status)
+		if status == 3 {
+			model = model.Where("task_process = 3 OR pause = 1")
+		} else if status == 1 {
+			model = model.Where("task_process = 1 AND pause = 0")
+		} else {
+			model = model.Where("task_process", status)
+		}
+	}
+	if workspaceId > 0 {
+		model = model.Where("workspace_id", workspaceId)
+	} else if workspaceId == -1 {
+		model = model.Where("workspace_id = 0 OR workspace_id IS NULL")
 	}
 
 	// get total
@@ -155,6 +167,7 @@ func CreateTask(ctx context.Context, args CreateTaskArgs) (int, error) {
 		"group_id":    args.GroupId,
 		"tag_ids":     tagIdsJson,
 		"tag_logic":   args.TagLogic,
+		"workspace_id": args.WorkspaceId,
 	})
 	if err != nil {
 		g.Log().Debug(ctx, "Failed to create campaign:", err.Error())
@@ -480,6 +493,7 @@ func CreateTaskWithRecipients(ctx context.Context, req *v1.CreateTaskReq, addTyp
 			"sending_window_start":   windowStart,
 			"sending_window_end":     windowEnd,
 			"sending_window_tz":      windowTz,
+			"workspace_id":           req.WorkspaceId,
 		})
 		if e != nil {
 			return gerror.New(public.LangCtx(ctx, "Failed to create task {}", e.Error()))
@@ -686,17 +700,15 @@ func UpdateTaskJoinMailstat(ctx context.Context) {
 	}
 	defer atomic.StoreInt32(&updateTaskStatsRunning, 0)
 
-	// Search for tasks that need to be updated
-	// 1. Tasks that are currently in progress or have been paused (task_process = 1 or 3)
-	// 2. Tasks that have been completed but have sent fewer messages than the number of recipients (task_process = 2 and sends_count < recipient_count)
-	// 3. Tasks that have never been updated (stats_update_time = 0)
+	// Search for tasks that need to be updated:
+	// 1. Tasks that are actively sending (task_process = 1)
+	// 2. Tasks that have never had stats calculated (stats_update_time = 0)
 	var tasksToUpdate []*entity.EmailTask
 	err := g.DB().Model("email_tasks").
-		Where("task_process IN (?)", []int{1, 3}).
-		WhereOr("task_process = 2 AND stats_update_time > ?", time.Now().Unix()-36*3600).
-		WhereOr("task_process = 2 AND sends_count < recipient_count*0.99").
-		WhereOr("stats_update_time", 0).
+		Where("task_process = 1").
+		WhereOr("stats_update_time = 0").
 		Order("id DESC").
+		Limit(10).
 		Scan(&tasksToUpdate)
 	if err != nil {
 		g.Log().Errorf(ctx, "UpdateTaskJoinMailstat: failed to get tasks to update: %v", err)
@@ -825,4 +837,111 @@ func GetGroupsByIds(ctx context.Context, groupIds []int) (map[int]string, error)
 	}
 
 	return groupMap, nil
+}
+
+// ============= workspace related operations =============
+
+// GetWorkspaces gets all workspaces with associated task counts
+func GetWorkspaces(ctx context.Context) ([]*v1.WorkspaceInfo, error) {
+	type wsRecord struct {
+		Id         int    `orm:"id"`
+		Name       string `orm:"name"`
+		Color      string `orm:"color"`
+		TaskCount  int    `orm:"task_count"`
+		CreateTime int    `orm:"create_time"`
+		UpdateTime int    `orm:"update_time"`
+	}
+	var records []*wsRecord
+	sql := `SELECT w.id, w.name, w.color, w.create_time, w.update_time, 
+		COUNT(t.id) as task_count 
+		FROM email_workspaces w 
+		LEFT JOIN email_tasks t ON t.workspace_id = w.id 
+		GROUP BY w.id, w.name, w.color, w.create_time, w.update_time 
+		ORDER BY w.id ASC`
+	err := g.DB().Ctx(ctx).Raw(sql).Scan(&records)
+	if err != nil {
+		return nil, err
+	}
+	res := make([]*v1.WorkspaceInfo, len(records))
+	for i, r := range records {
+		res[i] = &v1.WorkspaceInfo{
+			Id:         r.Id,
+			Name:       r.Name,
+			Color:      r.Color,
+			TaskCount:  r.TaskCount,
+			CreateTime: r.CreateTime,
+			UpdateTime: r.UpdateTime,
+		}
+	}
+	return res, nil
+}
+
+// CreateWorkspace creates a new workspace
+func CreateWorkspace(ctx context.Context, name, color string) (int, error) {
+	if color == "" {
+		color = "#2080f0"
+	}
+	now := time.Now().Unix()
+	res, err := g.DB().Model("email_workspaces").Ctx(ctx).Insert(g.Map{
+		"name":        name,
+		"color":       color,
+		"create_time": now,
+		"update_time": now,
+	})
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	return int(id), err
+}
+
+// UpdateWorkspace updates an existing workspace
+func UpdateWorkspace(ctx context.Context, id int, name, color string) error {
+	data := g.Map{
+		"name":        name,
+		"update_time": time.Now().Unix(),
+	}
+	if color != "" {
+		data["color"] = color
+	}
+	_, err := g.DB().Model("email_workspaces").Ctx(ctx).Where("id", id).Data(data).Update()
+	return err
+}
+
+// DeleteWorkspace deletes a workspace and moves its tasks to default (workspace_id = 0)
+func DeleteWorkspace(ctx context.Context, id int) error {
+	return g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		// Reset tasks to unassigned (0)
+		_, err := tx.Model("email_tasks").Where("workspace_id", id).Data(g.Map{"workspace_id": 0}).Update()
+		if err != nil {
+			return err
+		}
+		// Delete workspace
+		_, err = tx.Model("email_workspaces").Where("id", id).Delete()
+		return err
+	})
+}
+
+// BatchMoveTasks moves multiple tasks to a workspace
+func BatchMoveTasks(ctx context.Context, taskIds []int, workspaceId int) error {
+	if len(taskIds) == 0 {
+		return nil
+	}
+	_, err := g.DB().Model("email_tasks").Ctx(ctx).WhereIn("id", taskIds).Data(g.Map{
+		"workspace_id": workspaceId,
+		"update_time":  time.Now().Unix(),
+	}).Update()
+	return err
+}
+
+// BatchDeleteTasks deletes multiple tasks and cleans up their executors
+func BatchDeleteTasks(ctx context.Context, taskIds []int) error {
+	if len(taskIds) == 0 {
+		return nil
+	}
+	for _, id := range taskIds {
+		RemoveTaskExecutor(id)
+	}
+	_, err := g.DB().Model("email_tasks").Ctx(ctx).WhereIn("id", taskIds).Delete()
+	return err
 }

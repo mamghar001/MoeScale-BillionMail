@@ -52,6 +52,9 @@ type EmailTask struct {
 	SendingWindowStart      string    `json:"sending_window_start" dc:"sending window start time (HH:mm)"`
 	SendingWindowEnd        string    `json:"sending_window_end" dc:"sending window end time (HH:mm)"`
 	SendingWindowTz         string    `json:"sending_window_tz" dc:"timezone"`
+	WorkspaceId             int       `json:"workspace_id" dc:"workspace id"`
+	WorkspaceName           string    `json:"workspace_name" dc:"workspace name"`
+	WorkspaceColor          string    `json:"workspace_color" dc:"workspace color"`
 }
 
 type GroupInfo struct {
@@ -80,12 +83,13 @@ type TaskDetail struct {
 }
 
 type ListTasksReq struct {
-	g.Meta        `path:"/batch_mail/task/list" method:"get" tags:"BatchMail" summary:"get task list"`
-	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
-	Page          int    `json:"page" v:"required|min:1" dc:"page"`
-	PageSize      int    `json:"page_size" v:"required|min:1" dc:"page size"`
-	Keyword       string `json:"keyword" dc:"search keyword"`
-	Status        int    `json:"status" dc:"task status" default:"-1"`
+	g.Meta        `path:"/batch_mail/task/list" method:"get" tags:"BatchMail" summary:"get task list" in:"query"`
+	Authorization string `p:"authorization" json:"authorization" dc:"Authorization" in:"header"`
+	Page          int    `p:"page" json:"page" v:"required|min:1" dc:"page" in:"query"`
+	PageSize      int    `p:"page_size" json:"page_size" v:"required|min:1" dc:"page size" in:"query"`
+	Keyword       string `p:"keyword" json:"keyword" dc:"search keyword" in:"query"`
+	Status        int    `p:"status" json:"status" dc:"task status" in:"query" default:"-1"`
+	WorkspaceId   int    `p:"workspace_id" json:"workspace_id" dc:"workspace id filter (0: all, -1: unassigned, >0: specific workspace)" in:"query" default:"0"`
 }
 
 type ListTasksRes struct {
@@ -164,6 +168,7 @@ type CreateTaskReq struct {
 	SendingWindowStart   string `json:"sending_window_start" dc:"sending window start time (HH:mm, e.g. '08:00')" default:"08:00"`
 	SendingWindowEnd     string `json:"sending_window_end" dc:"sending window end time (HH:mm, e.g. '18:00')" default:"18:00"`
 	SendingWindowTz      string `json:"sending_window_tz" dc:"timezone (e.g. 'America/New_York', 'UTC')" default:"America/New_York"`
+	WorkspaceId          int    `json:"workspace_id" dc:"workspace id" default:"0"`
 }
 
 type CreateTaskRes struct {
@@ -296,6 +301,7 @@ type UpdateTaskInfoReq struct {
 	SendingWindowStart   string `json:"sending_window_start" dc:"sending window start time (HH:mm, e.g. '08:00')"`
 	SendingWindowEnd     string `json:"sending_window_end" dc:"sending window end time (HH:mm, e.g. '18:00')"`
 	SendingWindowTz      string `json:"sending_window_tz" dc:"timezone (e.g. 'America/New_York', 'UTC')"`
+	WorkspaceId          *int   `json:"workspace_id" dc:"workspace id"`
 }
 type UpdateTaskInfoRes struct {
 	api_v1.StandardRes
@@ -355,4 +361,82 @@ type TaskSamplePreviewRes struct {
 	api_v1.StandardRes
 	Data TaskSamplePreviewData `json:"data"`
 }
+
+// Workspace structs
+type WorkspaceInfo struct {
+	Id         int    `json:"id"          dc:"workspace id"`
+	Name       string `json:"name"        dc:"workspace name"`
+	Color      string `json:"color"       dc:"workspace color tag"`
+	TaskCount  int    `json:"task_count"  dc:"associated task count"`
+	CreateTime int    `json:"create_time" dc:"create time"`
+	UpdateTime int    `json:"update_time" dc:"update time"`
+}
+
+type WorkspaceListReq struct {
+	g.Meta        `path:"/batch_mail/workspace/list" method:"get" tags:"BatchMail" summary:"get workspace list"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+}
+
+type WorkspaceListRes struct {
+	api_v1.StandardRes
+	Data []*WorkspaceInfo `json:"data"`
+}
+
+type WorkspaceCreateReq struct {
+	g.Meta        `path:"/batch_mail/workspace/create" method:"post" tags:"BatchMail" summary:"create workspace"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	Name          string `json:"name" v:"required#Workspace name is required" dc:"workspace name"`
+	Color         string `json:"color" dc:"workspace color tag" default:"#2080f0"`
+}
+
+type WorkspaceCreateRes struct {
+	api_v1.StandardRes
+	Data struct {
+		Id int `json:"id" dc:"workspace id"`
+	} `json:"data"`
+}
+
+type WorkspaceUpdateReq struct {
+	g.Meta        `path:"/batch_mail/workspace/update" method:"post" tags:"BatchMail" summary:"update workspace"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	Id            int    `json:"id" v:"required#Workspace ID is required" dc:"workspace id"`
+	Name          string `json:"name" v:"required#Workspace name is required" dc:"workspace name"`
+	Color         string `json:"color" dc:"workspace color tag"`
+}
+
+type WorkspaceUpdateRes struct {
+	api_v1.StandardRes
+}
+
+type WorkspaceDeleteReq struct {
+	g.Meta        `path:"/batch_mail/workspace/delete" method:"post" tags:"BatchMail" summary:"delete workspace"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	Id            int    `json:"id" v:"required#Workspace ID is required" dc:"workspace id"`
+}
+
+type WorkspaceDeleteRes struct {
+	api_v1.StandardRes
+}
+
+type TaskBatchMoveReq struct {
+	g.Meta        `path:"/batch_mail/task/batch_move" method:"post" tags:"BatchMail" summary:"batch move tasks to workspace"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	TaskIds       []int  `json:"task_ids" v:"required#Task IDs are required" dc:"task ids"`
+	WorkspaceId   int    `json:"workspace_id" dc:"target workspace id (0 for unassigned)"`
+}
+
+type TaskBatchMoveRes struct {
+	api_v1.StandardRes
+}
+
+type TaskBatchDeleteReq struct {
+	g.Meta        `path:"/batch_mail/task/batch_delete" method:"post" tags:"BatchMail" summary:"batch delete tasks"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	TaskIds       []int  `json:"task_ids" v:"required#Task IDs are required" dc:"task ids"`
+}
+
+type TaskBatchDeleteRes struct {
+	api_v1.StandardRes
+}
+
 

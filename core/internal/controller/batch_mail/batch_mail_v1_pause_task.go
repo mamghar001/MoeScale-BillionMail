@@ -6,7 +6,9 @@ import (
 	"billionmail-core/internal/service/batch_mail"
 	"billionmail-core/internal/service/public"
 	"context"
+	"fmt"
 	"github.com/gogf/gf/v2/errors/gerror"
+	"github.com/gogf/gf/v2/frame/g"
 )
 
 func (c *ControllerV1) PauseTask(ctx context.Context, req *v1.PauseTaskReq) (res *v1.PauseTaskRes, err error) {
@@ -54,6 +56,7 @@ func (c *ControllerV1) PauseTask(ctx context.Context, req *v1.PauseTaskReq) (res
 	executor := batch_mail.GetTaskExecutor(req.TaskId)
 	if executor == nil {
 		// no active executor, update database status directly
+		_, _ = g.Redis().Del(ctx, fmt.Sprintf("cb:paused:%d", req.TaskId))
 		if err := batch_mail.UpdateTaskPauseStatus(ctx, req.TaskId, true); err != nil {
 			res.Code = 500
 			res.SetError(gerror.New(public.LangCtx(ctx, "Failed to pause task: {}", err.Error())))

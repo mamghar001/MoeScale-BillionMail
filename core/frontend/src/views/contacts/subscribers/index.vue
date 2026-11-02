@@ -77,7 +77,7 @@
 
 <script lang="tsx" setup>
 import { useBrowserLocation, useTimeAgo } from '@vueuse/core'
-import { DataTableColumns, NButton, NFlex, NTag } from 'naive-ui'
+import { DataTableColumns, NButton, NFlex, NTag, NPopover } from 'naive-ui'
 import { confirm, Message } from '@/utils'
 import { useModal } from '@/hooks/modal/useModal'
 import { useDataTable } from '@/hooks/useDataTable'
@@ -147,9 +147,104 @@ const columns = computed<DataTableColumns<Subscriber>>(() => [
 	{
 		key: 'email',
 		title: t('contacts.subscribers.columns.email'),
+		minWidth: 140,
+		ellipsis: {
+			tooltip: true,
+		},
+	},
+	{
+		key: 'name',
+		title: t('contacts.subscribers.columns.contactName'),
 		minWidth: 120,
 		ellipsis: {
 			tooltip: true,
+		},
+		render: row => {
+			const fn = row.attribs?.first_name || ''
+			const ln = row.attribs?.last_name || ''
+			const fullName = `${fn} ${ln}`.trim()
+			return fullName || '--'
+		},
+	},
+	{
+		key: 'company',
+		title: t('contacts.subscribers.columns.company'),
+		minWidth: 140,
+		ellipsis: {
+			tooltip: true,
+		},
+		render: row => {
+			return row.attribs?.company_name || '--'
+		},
+	},
+	{
+		key: 'job_title',
+		title: t('contacts.subscribers.columns.jobTitle'),
+		minWidth: 130,
+		ellipsis: {
+			tooltip: true,
+		},
+		render: row => {
+			return row.attribs?.job_title || row.attribs?.headline || '--'
+		},
+	},
+	{
+		key: 'attribs',
+		title: t('contacts.subscribers.columns.attributes'),
+		minWidth: 110,
+		render: row => {
+			const attribs = row.attribs || {}
+			const count = Object.keys(attribs).length
+			if (!count) {
+				return <span class="text-gray-400">--</span>
+			}
+			return (
+				<NPopover
+					trigger="click"
+					placement="bottom"
+					v-slots={{
+						trigger: () => (
+							<NTag size="small" type="info" bordered={false} style="cursor: pointer;">
+								{count} fields 👁
+							</NTag>
+						),
+						default: () => (
+							<div style="max-width: 440px; max-height: 380px; overflow-y: auto; padding: 4px 6px;">
+								<div style="font-weight: 600; font-size: 13px; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px; display: flex; justify-content: space-between; align-items: center;">
+									<span>Custom Attributes</span>
+									<span style="color: #888; font-size: 11px; font-weight: normal;">
+										{count} attributes
+									</span>
+								</div>
+								<table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+									<tbody>
+										{Object.entries(attribs).map(([key, val]) => (
+											<tr key={key} style="border-bottom: 1px solid #f3f3f3;">
+												<td style="color: #666; font-weight: 500; padding: 4px 8px 4px 0; vertical-align: top; white-space: nowrap; text-transform: capitalize;">
+													{key.replace(/_/g, ' ')}:
+												</td>
+												<td style="color: #111; padding: 4px 0; word-break: break-all;">
+													{String(val).startsWith('http') ? (
+														<a
+															href={String(val)}
+															target="_blank"
+															rel="noopener noreferrer"
+															style="color: #2080f0; text-decoration: none;">
+															{String(val)}
+														</a>
+													) : (
+														String(val)
+													)}
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						),
+					}}
+				/>
+			)
 		},
 	},
 	{
@@ -179,21 +274,12 @@ const columns = computed<DataTableColumns<Subscriber>>(() => [
 		},
 	},
 	{
-		key: 'last_active_at',
-		title: t('contacts.subscribers.columns.lastActiveAt'),
-		minWidth: 100,
-		render: row => {
-			if (row.last_active_at) {
-				const timeAgo = useTimeAgo(new Date(row.last_active_at * 1000))
-				return timeAgo.value
-			}
-			return '--'
-		},
-	},
-	{
 		key: 'groups',
 		title: t('contacts.subscribers.joinGroup'),
-		minWidth: 100,
+		minWidth: 120,
+		ellipsis: {
+			tooltip: true,
+		},
 		render: row => {
 			return row.group_name || ''
 		},
@@ -218,10 +304,22 @@ const columns = computed<DataTableColumns<Subscriber>>(() => [
 		},
 	},
 	{
+		key: 'last_active_at',
+		title: t('contacts.subscribers.columns.lastActiveAt'),
+		minWidth: 100,
+		render: row => {
+			if (row.last_active_at) {
+				const timeAgo = useTimeAgo(new Date(row.last_active_at * 1000))
+				return timeAgo.value
+			}
+			return '--'
+		},
+	},
+	{
 		title: t('common.columns.actions'),
 		key: 'actions',
 		align: 'right',
-		width: 180,
+		width: 140,
 		render: row => (
 			<NFlex inline={true}>
 				<NButton

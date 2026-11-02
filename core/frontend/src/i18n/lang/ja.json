@@ -462,7 +462,11 @@
 				"email": "メール",
 				"name": "グループ名",
 				"createdAt": "作成時間",
-				"lastActiveAt": "最終アクティブ時間"
+				"lastActiveAt": "最終アクティブ時間",
+				"contactName": "氏名",
+				"company": "会社",
+				"jobTitle": "役職",
+				"attributes": "属性"
 			},
 			"status": {
 				"subscribed": "購読済み",

@@ -96,6 +96,26 @@ func CleanupIdleExecutors() {
 
 // ProcessEmailTasks
 func ProcessEmailTasks(ctx context.Context) {
+	// Auto-resume any circuit-breaker paused tasks whose cooldown has expired (30 minutes)
+	var pausedTasks []*entity.EmailTask
+	if err := g.DB().Model("email_tasks").Where("task_process", 3).Where("pause", 1).Scan(&pausedTasks); err == nil {
+		for _, pt := range pausedTasks {
+			cbVal, err := g.Redis().Get(ctx, fmt.Sprintf("cb:paused:%d", pt.Id))
+			if err == nil && !cbVal.IsEmpty() {
+				pauseEpoch := cbVal.Int64()
+				if time.Now().Unix()-pauseEpoch >= 1800 { // 30 minutes cooldown
+					_, _ = g.Redis().Del(ctx, fmt.Sprintf("cb:paused:%d", pt.Id))
+					g.Log().Infof(ctx, "Auto-resuming circuit-breaker paused campaign %d (cooldown expired)", pt.Id)
+					if executor := GetTaskExecutor(pt.Id); executor != nil {
+						_ = executor.ResumeTask(pt.Id)
+					} else {
+						_ = UpdateTaskPauseStatus(ctx, pt.Id, false)
+					}
+				}
+			}
+		}
+	}
+
 	// get pending tasks
 	var tasks []*entity.EmailTask
 	err := g.DB().Model("email_tasks").
@@ -145,9 +165,10 @@ type TaskExecutor struct {
 	cancel context.CancelFunc
 
 	// running status
-	isRunning    atomic.Bool
-	isPaused     atomic.Bool
-	lastActivity time.Time
+	isRunning       atomic.Bool
+	isPaused        atomic.Bool
+	isCircuitPaused atomic.Bool
+	lastActivity    time.Time
 
 	// task configuration cache
 	taskConfig   *entity.EmailTask
@@ -417,6 +438,10 @@ func (e *TaskExecutor) Stop() {
 
 // PauseTask
 func (e *TaskExecutor) PauseTask(taskId int) error {
+	// A manual pause clears the circuit-breaker flag so it will NOT auto-resume
+	e.isCircuitPaused.Store(false)
+	_, _ = g.Redis().Del(context.Background(), fmt.Sprintf("cb:paused:%d", taskId))
+
 	// Always ensure the database and UI reflect the paused state immediately
 	if err := UpdateTaskPauseStatus(context.Background(), taskId, true); err != nil {
 		return fmt.Errorf("failed to update task pause status: %w", err)
@@ -478,6 +503,10 @@ func (e *TaskExecutor) resetFetchedRecords(taskId int) (int64, error) {
 }
 
 func (e *TaskExecutor) ResumeTask(taskId int) error {
+	// Clear circuit breaker pause flag
+	e.isCircuitPaused.Store(false)
+	_, _ = g.Redis().Del(context.Background(), fmt.Sprintf("cb:paused:%d", taskId))
+
 	// Always ensure database reflects running status (pause = 0, task_process = 1)
 	if err := UpdateTaskPauseStatus(context.Background(), taskId, false); err != nil {
 		return fmt.Errorf("failed to update task resume status: %w", err)
@@ -1942,6 +1971,7 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 			taskId, hardBounceRate*100, pauseThreshold*100)
 
 		// Set pause state
+		e.isCircuitPaused.Store(true)
 		e.isPaused.Store(true)
 
 		// Reset any fetched records that weren't sent so they aren't lost
@@ -1950,19 +1980,36 @@ func (e *TaskExecutor) checkAndAdjustRateLimit(ctx context.Context, taskId int) 
 		// Persist pause status in database so campaign is visibly and persistently paused in UI & DB
 		_ = UpdateTaskPauseStatus(context.Background(), taskId, true)
 
+		// Record pause timestamp in Redis for cooldown tracking
+		_, _ = g.Redis().Set(context.Background(), fmt.Sprintf("cb:paused:%d", taskId), time.Now().Unix())
+
 		go func() {
-			time.Sleep(1 * time.Hour)
-			// Check if task was manually paused before auto-resuming
-			currentTask, _ := GetTaskInfo(context.Background(), taskId)
-			if currentTask != nil && (currentTask.Pause == 1 || currentTask.TaskProcess != 1) {
-				g.Log().Infof(context.Background(), "Campaign %d was manually paused (pause=%d, process=%d), skipping auto-resume after cooldown", taskId, currentTask.Pause, currentTask.TaskProcess)
+			cooldownDuration := 30 * time.Minute
+			g.Log().Warningf(context.Background(), "Campaign %d entered circuit breaker cooldown for %v. Will automatically resume afterwards.", taskId, cooldownDuration)
+			time.Sleep(cooldownDuration)
+
+			// Check if task was manually modified, paused, or finished while waiting
+			if !e.isCircuitPaused.Load() {
+				g.Log().Infof(context.Background(), "Campaign %d was manually modified or paused during cooldown; skipping circuit breaker auto-resume", taskId)
+				_, _ = g.Redis().Del(context.Background(), fmt.Sprintf("cb:paused:%d", taskId))
 				return
 			}
-			g.Log().Infof(ctx, "Auto-resuming campaign %d after cooldown", taskId)
-			e.isPaused.Store(false)
-			select {
-			case e.resumeChan <- struct{}{}:
-			default:
+
+			currentTask, err := GetTaskInfo(context.Background(), taskId)
+			if err != nil || currentTask == nil || currentTask.TaskProcess == 2 {
+				g.Log().Infof(context.Background(), "Campaign %d is completed or removed, skipping auto-resume", taskId)
+				_, _ = g.Redis().Del(context.Background(), fmt.Sprintf("cb:paused:%d", taskId))
+				return
+			}
+
+			_, _ = g.Redis().Del(context.Background(), fmt.Sprintf("cb:paused:%d", taskId))
+			g.Log().Infof(context.Background(), "Auto-resuming campaign %d after circuit breaker cooldown...", taskId)
+			// Reset rate controller to a safe ramp-up rate after cooldown
+			if e.rateController != nil {
+				e.rateController.SetMaxPerMinute(20)
+			}
+			if err := e.ResumeTask(taskId); err != nil {
+				g.Log().Errorf(context.Background(), "Failed to auto-resume campaign %d: %v", taskId, err)
 			}
 		}()
 	} else if (stats.HardBounces >= 3 && hardBounceRate >= throttleThreshold) || (stats.SoftDefers >= 5 && softDeferRate >= 0.20) {

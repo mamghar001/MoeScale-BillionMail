@@ -2,7 +2,7 @@
 	<n-card :title="$t('overview.rate.openRate')">
 		<line-chart
 			chart-color="#1a519b"
-			:date-type="open.column_type"
+			:date-type="open?.column_type || 'hourly'"
 			:chart-name="$t('overview.rate.openRate')"
 			:chart-data="openRateData">
 		</line-chart>
@@ -10,7 +10,7 @@
 	<n-card :title="$t('overview.rate.clickRate')">
 		<line-chart
 			chart-color="#1a519b"
-			:date-type="click.column_type"
+			:date-type="click?.column_type || 'hourly'"
 			:chart-name="$t('overview.rate.clickRate')"
 			:chart-data="clickRateData">
 		</line-chart>
@@ -18,7 +18,7 @@
 	<n-card :title="$t('overview.rate.bounceRate')">
 		<line-chart
 			chart-color="#20a53a"
-			:date-type="bounce.column_type"
+			:date-type="bounce?.column_type || 'hourly'"
 			:chart-name="$t('overview.rate.bounceRate')"
 			:chart-data="bounceRateData">
 		</line-chart>

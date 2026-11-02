@@ -151,13 +151,23 @@ async function fetchOverviewData() {
 	})
 
 	if (isObject<MailOverview>(res)) {
-		updateRateData(res.dashboard)
+		if (res.dashboard) {
+			updateRateData(res.dashboard)
+		}
 
 		providers.value = isArray(res.mail_providers) ? res.mail_providers : []
-		sendMail.value = res.send_mail_chart
-		bounceRate.value = res.bounce_rate_chart
-		clickRate.value = res.click_rate_chart
-		openRate.value = res.open_rate_chart
+		if (res.send_mail_chart) {
+			sendMail.value = res.send_mail_chart
+		}
+		if (res.bounce_rate_chart) {
+			bounceRate.value = res.bounce_rate_chart
+		}
+		if (res.click_rate_chart) {
+			clickRate.value = res.click_rate_chart
+		}
+		if (res.open_rate_chart) {
+			openRate.value = res.open_rate_chart
+		}
 	}
 }
 

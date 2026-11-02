@@ -19,7 +19,7 @@
 			</div>
 		</div>
 		<div class="flex-1 min-h-180px">
-			<bar-chart :date-type="data.column_type" :chart-data="barChartData" />
+			<bar-chart :date-type="data?.column_type || 'hourly'" :chart-data="barChartData" />
 		</div>
 	</div>
 </template>
@@ -45,15 +45,15 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const successRate = computed(() => {
-	return data.dashboard.delivery_rate
+	return data?.dashboard?.delivery_rate ?? 0
 })
 
 const successCount = computed(() => {
-	return data.dashboard.delivered
+	return data?.dashboard?.delivered ?? 0
 })
 
 const failCount = computed(() => {
-	return data.dashboard.failed
+	return data?.dashboard?.failed ?? 0
 })
 
 const handleShowFail = () => {

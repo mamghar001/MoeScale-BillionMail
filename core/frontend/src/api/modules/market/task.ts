@@ -46,6 +46,7 @@ interface TaskAddParams {
 	remark: string
 	tag_ids: number[]
 	tag_logic: string
+	workspace_id?: number
 }
 
 /**
@@ -146,4 +147,69 @@ export function getMailProviderLogs(params: {
 export function getTaskSamplePreview(params: { id: number; seed?: number }) {
 	return instance.get('/batch_mail/task/sample_preview', { params })
 }
+
+/**
+ * 获取工作区列表
+ */
+export function getWorkspaceList() {
+	return instance.get('/batch_mail/workspace/list')
+}
+
+/**
+ * 创建工作区
+ */
+export function createWorkspace(data: { name: string; color?: string }) {
+	return instance.post('/batch_mail/workspace/create', data, {
+		fetchOptions: {
+			successMessage: true,
+		},
+	})
+}
+
+/**
+ * 更新工作区
+ */
+export function updateWorkspace(data: { id: number; name: string; color?: string }) {
+	return instance.post('/batch_mail/workspace/update', data, {
+		fetchOptions: {
+			successMessage: true,
+		},
+	})
+}
+
+/**
+ * 删除工作区
+ */
+export function deleteWorkspace(data: { id: number }) {
+	return instance.post('/batch_mail/workspace/delete', data, {
+		fetchOptions: {
+			successMessage: true,
+		},
+	})
+}
+
+/**
+ * 批量移动任务到工作区
+ */
+export function batchMoveTasks(data: { task_ids: number[]; workspace_id: number }) {
+	return instance.post('/batch_mail/task/batch_move', data, {
+		fetchOptions: {
+			loading: 'Moving campaigns...',
+			successMessage: true,
+		},
+	})
+}
+
+/**
+ * 批量删除任务
+ */
+export function batchDeleteTasks(data: { task_ids: number[] }) {
+	return instance.post('/batch_mail/task/batch_delete', data, {
+		fetchOptions: {
+			loading: 'Deleting campaigns...',
+			successMessage: true,
+		},
+	})
+}
+
 

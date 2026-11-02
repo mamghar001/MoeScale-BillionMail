@@ -36,6 +36,18 @@ export interface Task {
 	tag_ids: number[]
 	tag_logic: string
 	tags: Array<{ id: number; name: string }>
+	workspace_id?: number
+	workspace_name?: string
+	workspace_color?: string
+}
+
+export interface WorkspaceItem {
+	id: number
+	name: string
+	color: string
+	task_count?: number
+	create_time?: number
+	update_time?: number
 }
 
 export interface Group {
@@ -49,6 +61,8 @@ export interface TaskParams {
 	page: number
 	page_size: number
 	keyword: string
+	status?: number
+	workspace_id?: number
 }
 
 export interface TaskDetailItem {

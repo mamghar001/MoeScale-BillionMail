@@ -2,9 +2,53 @@
 	<div>
 		<bt-table-layout>
 			<template #toolsLeft>
-				<n-button type="primary" @click="handleAdd">
-					{{ t('market.task.actions.add') }}
-				</n-button>
+				<div class="flex items-center gap-12px flex-wrap">
+					<n-button type="primary" @click="handleAdd">
+						{{ t('market.task.actions.add') }}
+					</n-button>
+
+					<!-- Workspace Filter Dropdown -->
+					<div class="flex items-center gap-6px">
+						<n-select
+							v-model:value="selectedWorkspace"
+							:options="workspaceOptions"
+							placeholder="Filter by Workspace"
+							style="width: 210px"
+							size="medium"
+							@update:value="handleWorkspaceChange"
+						/>
+						<n-button
+							secondary
+							title="Manage Workspaces / Clients"
+							@click="openWorkspaceModal"
+						>
+							Workspaces
+						</n-button>
+					</div>
+
+					<!-- Status Filter Dropdown -->
+					<div class="flex items-center">
+						<n-select
+							v-model:value="selectedStatus"
+							:options="statusOptions"
+							placeholder="Filter by Status"
+							style="width: 160px"
+							size="medium"
+							@update:value="handleStatusChange"
+						/>
+					</div>
+
+					<!-- Bulk Action Buttons -->
+					<div v-if="checkedRowKeys.length > 0" class="flex items-center gap-8px border-l border-gray-300 dark:border-dark-500 pl-12px">
+						<span class="text-xs text-gray-500 font-medium">{{ checkedRowKeys.length }} selected:</span>
+						<n-button type="info" size="small" secondary @click="openBatchMoveModal">
+							Move to Workspace
+						</n-button>
+						<n-button type="error" size="small" secondary @click="handleBatchDelete">
+							Delete Selected
+						</n-button>
+					</div>
+				</div>
 			</template>
 			<template #toolsRight>
 				<bt-search
@@ -15,7 +59,13 @@
 				</bt-search>
 			</template>
 			<template #table>
-				<n-data-table :loading="loading" :columns="columns" :data="tableList">
+				<n-data-table
+					v-model:checked-row-keys="checkedRowKeys"
+					:row-key="row => row.id"
+					:loading="loading"
+					:columns="columns"
+					:data="tableList"
+				>
 					<template #empty>
 						<bt-table-help> </bt-table-help>
 					</template>
@@ -32,22 +82,187 @@
 			<template #modal>
 				<status-modal />
 				<detail-modal />
+				<workspace-modal ref="workspaceModalRef" @change="handleWorkspaceModalChange" />
+
+				<!-- Batch Move Modal -->
+				<bt-modal
+					v-model:show="batchMoveVisible"
+					title="Move Selected Campaigns to Workspace"
+					:width="500"
+					confirm-text="Move Campaigns"
+					@confirm="handleConfirmBatchMove"
+				>
+					<div class="py-16px">
+						<p class="text-sm text-gray-600 dark:text-gray-300 mb-12px">
+							Select the target workspace for <b>{{ checkedRowKeys.length }}</b> selected campaign(s):
+						</p>
+						<n-select
+							v-model:value="batchTargetWorkspaceId"
+							:options="batchTargetWorkspaceOptions"
+							placeholder="Select Target Workspace"
+						/>
+					</div>
+				</bt-modal>
 			</template>
 		</bt-table-layout>
 	</div>
 </template>
 
 <script lang="tsx" setup>
-import { DataTableColumns, NButton, NFlex, NProgress, NTag } from 'naive-ui'
+import { computed, ref, onMounted } from 'vue'
+import {
+	DataTableColumns,
+	NButton,
+	NFlex,
+	NProgress,
+	NTag,
+	NSelect,
+} from 'naive-ui'
 import { useModal } from '@/hooks/modal/useModal'
 import { useTableData } from '@/hooks/useTableData'
-import { confirm, formatDurationHighest } from '@/utils'
-import { deleteTask, getTaskList, pauseTask, resumeTask } from '@/api/modules/market/task'
-import type { Task, TaskParams } from './interface'
+import { confirm, formatDurationHighest, Message } from '@/utils'
+import {
+	deleteTask,
+	getTaskList,
+	pauseTask,
+	resumeTask,
+	getWorkspaceList,
+	batchMoveTasks,
+	batchDeleteTasks,
+} from '@/api/modules/market/task'
+import type { Task, TaskParams, WorkspaceItem } from './interface'
 
 import TaskDetail from './components/TaskDetail.vue'
 import TaskStatus from './components/TaskStatus.vue'
+import WorkspaceModal from './components/WorkspaceModal.vue'
+
 const { t } = useI18n()
+const router = useRouter()
+
+// Selection and Batch Actions state
+const checkedRowKeys = ref<number[]>([])
+const batchMoveVisible = ref(false)
+const batchTargetWorkspaceId = ref<number>(0)
+
+// Workspaces state
+const selectedWorkspace = ref<number>(0)
+const workspaces = ref<WorkspaceItem[]>([])
+const workspaceModalRef = ref<any>(null)
+
+// Status filter state
+const selectedStatus = ref<number>(-1)
+const statusOptions = computed(() => [
+	{ label: '📊 All Statuses', value: -1 },
+	{ label: '⏳ Pending', value: 0 },
+	{ label: '🚀 In Progress', value: 1 },
+	{ label: '✅ Completed', value: 2 },
+	{ label: '⏸️ Paused', value: 3 },
+])
+
+const handleStatusChange = (val: number) => {
+	selectedStatus.value = val
+	tableParams.value.status = val
+	checkedRowKeys.value = []
+	getTableData(true)
+}
+
+const loadWorkspaces = async () => {
+	try {
+		const res: any = await getWorkspaceList()
+		workspaces.value = Array.isArray(res) ? res : (res?.data || [])
+	} catch (e) {
+		// Silent error
+	}
+}
+
+onMounted(() => {
+	loadWorkspaces()
+})
+
+const handleWorkspaceModalChange = () => {
+	loadWorkspaces()
+	getTableData()
+}
+
+const openWorkspaceModal = () => {
+	workspaceModalRef.value?.open()
+}
+
+// Workspace filter options for top select
+const workspaceOptions = computed(() => {
+	const opts: Array<{ label: string; value: number }> = [
+		{ label: '📁 All Workspaces', value: 0 },
+		{ label: '⚪ Default / Unassigned', value: -1 },
+	]
+	for (const ws of workspaces.value) {
+		const countStr = ws.task_count ? ` (${ws.task_count})` : ''
+		opts.push({
+			label: `${ws.name}${countStr}`,
+			value: ws.id,
+		})
+	}
+	return opts
+})
+
+// Workspace options for batch move dialog
+const batchTargetWorkspaceOptions = computed(() => {
+	const opts: Array<{ label: string; value: number }> = [
+		{ label: '⚪ Default / Unassigned (0)', value: 0 },
+	]
+	for (const ws of workspaces.value) {
+		opts.push({
+			label: ws.name,
+			value: ws.id,
+		})
+	}
+	return opts
+})
+
+const handleWorkspaceChange = (val: number) => {
+	selectedWorkspace.value = val
+	tableParams.value.workspace_id = val
+	checkedRowKeys.value = []
+	getTableData(true)
+}
+
+const openBatchMoveModal = () => {
+	batchTargetWorkspaceId.value = selectedWorkspace.value > 0 ? selectedWorkspace.value : 0
+	batchMoveVisible.value = true
+}
+
+const handleConfirmBatchMove = async () => {
+	if (!checkedRowKeys.value.length) return
+	try {
+		await batchMoveTasks({
+			task_ids: checkedRowKeys.value,
+			workspace_id: batchTargetWorkspaceId.value,
+		})
+		Message.success('Campaigns moved successfully')
+		batchMoveVisible.value = false
+		checkedRowKeys.value = []
+		getTableData()
+		loadWorkspaces()
+	} catch (e: any) {
+		// Handled by request wrapper
+	}
+}
+
+const handleBatchDelete = () => {
+	if (!checkedRowKeys.value.length) return
+	confirm({
+		title: 'Delete Selected Campaigns',
+		content: `Are you sure you want to permanently delete ${checkedRowKeys.value.length} selected campaign(s)? All recipient progress and tracking logs for these campaigns will be removed.`,
+		confirmText: t('common.actions.delete'),
+		confirmType: 'error',
+		onConfirm: async () => {
+			await batchDeleteTasks({ task_ids: checkedRowKeys.value })
+			Message.success('Selected campaigns deleted')
+			checkedRowKeys.value = []
+			getTableData()
+			loadWorkspaces()
+		},
+	})
+}
 
 const { loading, tableParams, tableList, tableTotal, getTableData } = useTableData<
 	Task,
@@ -59,6 +274,8 @@ const { loading, tableParams, tableList, tableTotal, getTableData } = useTableDa
 		page: 1,
 		page_size: 10,
 		keyword: '',
+		status: -1,
+		workspace_id: 0,
 	},
 	fetchFn: getTaskList,
 })
@@ -66,11 +283,44 @@ const { loading, tableParams, tableList, tableTotal, getTableData } = useTableDa
 // Table columns
 const columns = ref<DataTableColumns<Task>>([
 	{
+		type: 'selection',
+		width: 45,
+	},
+	{
 		key: 'id',
 		title: t('market.task.columns.id'),
 		width: '6%',
 		minWidth: 70,
 		render: row => <span class="font-mono font-semibold">#{row.id}</span>,
+	},
+	{
+		key: 'workspace_name',
+		title: 'Workspace',
+		width: '10%',
+		minWidth: 110,
+		render: row => {
+			const ws = row.workspace_name
+				? { name: row.workspace_name, color: row.workspace_color }
+				: workspaces.value.find(w => w.id === row.workspace_id)
+			if (ws && (row.workspace_id || 0) > 0) {
+				return (
+					<NTag
+						size="small"
+						round
+						style={{
+							backgroundColor: ws.color || '#2080f0',
+							color: '#ffffff',
+							border: 'none',
+							fontWeight: '500',
+							fontSize: '11px',
+						}}
+					>
+						{ws.name}
+					</NTag>
+				)
+			}
+			return <span class="text-gray-400 text-xs">Default</span>
+		},
 	},
 	{
 		key: 'subject',
@@ -158,11 +408,9 @@ const columns = ref<DataTableColumns<Task>>([
 			tooltip: true,
 		},
 		render: row => {
-			// 已完成
 			if (row.task_process === 2) {
 				return '--'
 			}
-			// 显示预计时间
 			if (row.estimated_time_with_warmup >= 0) {
 				return formatDurationHighest(row.estimated_time_with_warmup)
 			}
@@ -255,8 +503,6 @@ const columns = ref<DataTableColumns<Task>>([
 	},
 ])
 
-const router = useRouter()
-
 // 添加任务
 const handleAdd = () => {
 	router.push('/market/task/edit')
@@ -321,6 +567,7 @@ const handleDelete = (row: Task) => {
 		onConfirm: async () => {
 			await deleteTask({ id: row.id })
 			getTableData()
+			loadWorkspaces()
 		},
 	})
 }
