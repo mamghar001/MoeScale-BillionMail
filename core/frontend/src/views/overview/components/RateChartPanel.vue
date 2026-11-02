@@ -55,7 +55,10 @@ const getChartTime = (type: string, x: number) => {
 		date.setSeconds(0)
 		date.setHours(x)
 		format = 'yyyy-MM-dd HH:mm'
-	} else if (type === 'daily') {
+	} else if (type === 'monthly') {
+		date = new Date(x * 1000)
+		format = 'yyyy-MM'
+	} else {
 		date = new Date(x * 1000)
 		format = 'yyyy-MM-dd'
 	}

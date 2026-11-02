@@ -63,6 +63,9 @@ const chartOptions = computed(() => {
 					if (dateType === 'hourly') {
 						return formatTime(val, 'HH:mm')
 					}
+					if (dateType === 'monthly') {
+						return formatTime(val, 'yyyy-MM')
+					}
 					return formatTime(val, 'yyyy-MM-dd')
 				},
 			},
